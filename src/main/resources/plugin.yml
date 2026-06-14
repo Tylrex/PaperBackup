@@ -1,0 +1,15 @@
+name: PaperBackup
+version: 1.0-SNAPSHOT
+main: ua.vlad.backup.PaperBackup
+api-version: '1.21'
+author: Vlad
+description: A plugin to create zip backups of your Paper server.
+commands:
+  backup:
+    description: Control backup system.
+    permission: backup.admin
+    usage: /<command> [run|reload]
+permissions:
+  backup.admin:
+    description: Allows administration of server backups.
+    default: op

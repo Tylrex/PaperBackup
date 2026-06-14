@@ -1,0 +1,31 @@
+# Folder where backups will be saved. Can be relative path from server root (e.g. 'backups') or absolute path.
+backup-folder: "backups"
+
+# Maximum number of backups to keep in the backup folder.
+# Set to -1 to disable this limit.
+max-backups: 10
+
+# Maximum total size of all backups in the backup folder (in Megabytes).
+# Set to -1 to disable this limit.
+# Example: 10240 is 10 GB.
+max-total-size-mb: 10240
+
+# How often (in minutes) to perform automated backups.
+# Set to 0 or -1 to disable automatic backups.
+backup-interval-minutes: 60
+
+# Files and directories to exclude from the backup.
+# Path comparisons are done relative to the server root directory.
+# Backups folder is automatically excluded.
+exclude-paths:
+  - "backups"
+  - "cache"
+  - "logs"
+  - "plugins/PaperBackup/backups"
+  - ".git"
+  - "crash-reports"
+  - "webdoc"
+  - "session.lock"
+  - "world/session.lock"
+  - "world_nether/session.lock"
+  - "world_the_end/session.lock"
