@@ -8,6 +8,7 @@ import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.FileList;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.GoogleCredentials;
+import com.google.auth.oauth2.UserCredentials;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -28,7 +29,11 @@ public class GoogleDriveStorage {
     private static final String ZIP_MIME_TYPE = "application/zip";
 
     private final Logger logger;
+    private final String authMode;
     private final java.io.File credentialsFile;
+    private final String oauthClientId;
+    private final String oauthClientSecret;
+    private final String oauthRefreshToken;
     private final String folderId;
     private final int maxBackups;
     private final long maxTotalSizeMb;
@@ -37,14 +42,22 @@ public class GoogleDriveStorage {
 
     public GoogleDriveStorage(
             Logger logger,
+            String authMode,
             java.io.File credentialsFile,
+            String oauthClientId,
+            String oauthClientSecret,
+            String oauthRefreshToken,
             String folderId,
             int maxBackups,
             long maxTotalSizeMb,
             int minimumBackupsToKeep
     ) {
         this.logger = logger;
+        this.authMode = authMode == null ? "OAUTH" : authMode.trim().toUpperCase(Locale.ROOT);
         this.credentialsFile = credentialsFile;
+        this.oauthClientId = oauthClientId == null ? "" : oauthClientId.trim();
+        this.oauthClientSecret = oauthClientSecret == null ? "" : oauthClientSecret.trim();
+        this.oauthRefreshToken = oauthRefreshToken == null ? "" : oauthRefreshToken.trim();
         this.folderId = folderId == null ? "" : folderId.trim();
         this.maxBackups = maxBackups;
         this.maxTotalSizeMb = maxTotalSizeMb;
@@ -108,14 +121,7 @@ public class GoogleDriveStorage {
         if (drive != null) {
             return drive;
         }
-        if (!credentialsFile.exists()) {
-            throw new IOException("Google Drive service account file does not exist: " + credentialsFile.getPath());
-        }
-
-        GoogleCredentials credentials;
-        try (FileInputStream input = new FileInputStream(credentialsFile)) {
-            credentials = GoogleCredentials.fromStream(input).createScoped(List.of(DriveScopes.DRIVE));
-        }
+        GoogleCredentials credentials = createCredentials();
 
         drive = new Drive.Builder(
                 GoogleNetHttpTransport.newTrustedTransport(),
@@ -125,6 +131,31 @@ public class GoogleDriveStorage {
                 .setApplicationName("PaperBackup")
                 .build();
         return drive;
+    }
+
+    private GoogleCredentials createCredentials() throws IOException {
+        if (authMode.equals("SERVICE_ACCOUNT")) {
+            if (!credentialsFile.exists()) {
+                throw new IOException("Google Drive service account file does not exist: " + credentialsFile.getPath());
+            }
+
+            try (FileInputStream input = new FileInputStream(credentialsFile)) {
+                return GoogleCredentials.fromStream(input).createScoped(List.of(DriveScopes.DRIVE));
+            }
+        }
+
+        if (!authMode.equals("OAUTH")) {
+            throw new IOException("Unknown google-drive.auth-mode: " + authMode + ". Use OAUTH or SERVICE_ACCOUNT.");
+        }
+        if (oauthClientId.isBlank() || oauthClientSecret.isBlank() || oauthRefreshToken.isBlank()) {
+            throw new IOException("Google Drive OAuth is not configured. Fill google-drive.oauth.client-id, client-secret, and refresh-token.");
+        }
+
+        return UserCredentials.newBuilder()
+                .setClientId(oauthClientId)
+                .setClientSecret(oauthClientSecret)
+                .setRefreshToken(oauthRefreshToken)
+                .build();
     }
 
     private void pruneOldBackups(Drive driveClient) throws IOException {

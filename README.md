@@ -14,7 +14,8 @@ to Google Drive and no local `backup-*.zip` file is created on the server.
 - Runs backup work asynchronously.
 - Automatically excludes the backup folder to avoid recursive backups.
 - Supports configurable excluded files and folders.
-- Supports Google Drive uploads through a service account.
+- Supports Google Drive uploads through OAuth for normal personal Drive accounts.
+- Supports service accounts for Google Workspace Shared Drives.
 - Streams backup ZIPs directly to Google Drive without creating local ZIP files.
 - Supports scheduled automatic backups.
 - Persists the next scheduled backup time in `plugins/PaperBackup/state.yml`, so
@@ -35,11 +36,10 @@ to Google Drive and no local `backup-*.zip` file is created on the server.
 1. Download the built `PaperBackup` jar.
 2. Put it into the server `plugins` folder.
 3. Restart the server.
-4. Put your Google service account JSON at
-   `plugins/PaperBackup/google-service-account.json`.
-5. Edit `plugins/PaperBackup/google-drive-config.yml` and fill `google-drive.folder-id`.
-6. Share the Google Drive folder with the service account email from the JSON
-   file.
+4. Edit `plugins/PaperBackup/google-drive-config.yml`.
+5. For a normal personal Google Drive account, use `google-drive.auth-mode: OAUTH`.
+6. Fill `google-drive.oauth.client-id`, `client-secret`, `refresh-token`, and
+   `google-drive.folder-id`.
 7. Set `google-drive.enabled: true`.
 8. Run `/backup reload` after changing the config.
 
@@ -96,7 +96,12 @@ save-worlds-before-backup: true
 # No local backup-*.zip file is created on the server.
 google-drive:
   enabled: true
+  auth-mode: "OAUTH"
   service-account-file: "plugins/PaperBackup/google-service-account.json"
+  oauth:
+    client-id: "PUT_OAUTH_CLIENT_ID_HERE"
+    client-secret: "PUT_OAUTH_CLIENT_SECRET_HERE"
+    refresh-token: "PUT_OAUTH_REFRESH_TOKEN_HERE"
   folder-id: "PUT_GOOGLE_DRIVE_FOLDER_ID_HERE"
   max-backups: 10
   minimum-backups-to-keep: 1
@@ -138,35 +143,53 @@ exclude-paths:
 - If another backup is already running, `/backup run` will not start a second
   backup.
 
-## Google Drive Setup
+## Google Drive Setup For Personal Drive
 
 1. Open [Google Cloud Console](https://console.cloud.google.com/).
 2. Create or select a project.
 3. Enable **Google Drive API** for the project.
-4. Go to **IAM & Admin** -> **Service Accounts**.
-5. Create a service account.
-6. Open the service account -> **Keys** -> **Add key** -> **Create new key** ->
-   **JSON**.
-7. Put the downloaded JSON file on the server as
-   `plugins/PaperBackup/google-service-account.json`.
+4. Go to **APIs & Services** -> **Credentials**.
+5. Create an OAuth client ID. For the simplest setup, use a Desktop app client.
+6. Use OAuth mode in `google-drive-config.yml`.
+7. Generate a refresh token for your own Google account with this scope:
+   `https://www.googleapis.com/auth/drive`.
+   A quick way is Google OAuth 2.0 Playground:
+   - Open [OAuth 2.0 Playground](https://developers.google.com/oauthplayground/).
+   - Open the settings gear.
+   - Enable **Use your own OAuth credentials**.
+   - Paste your OAuth client ID and client secret.
+   - Select the Drive API scope `https://www.googleapis.com/auth/drive`.
+   - Authorize APIs.
+   - Exchange the authorization code for tokens.
+   - Copy the refresh token.
 8. Open Google Drive in your browser and create a backup folder.
-9. Share that folder with the service account email. The email is inside the
-   JSON file as `client_email`.
-10. Copy the folder ID from the folder URL:
+9. Copy the folder ID from the folder URL:
 
 ```text
 https://drive.google.com/drive/folders/FOLDER_ID_IS_HERE
 ```
 
-11. Paste it into:
+10. Paste it into:
 
 ```yaml
 google-drive:
   enabled: true
+  auth-mode: "OAUTH"
+  oauth:
+    client-id: "YOUR_OAUTH_CLIENT_ID"
+    client-secret: "YOUR_OAUTH_CLIENT_SECRET"
+    refresh-token: "YOUR_OAUTH_REFRESH_TOKEN"
   folder-id: "FOLDER_ID_IS_HERE"
 ```
 
-12. Run `/backup reload`, then `/backup run`.
+11. Run `/backup reload`, then `/backup run`.
+
+## Service Account Mode
+
+Service accounts do not have storage quota on normal personal Google Drive.
+Use `SERVICE_ACCOUNT` only with Google Workspace Shared Drives or advanced
+domain delegation. If you see `Service Accounts do not have storage quota`, use
+`OAUTH` mode instead.
 
 ## Building
 

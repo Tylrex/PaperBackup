@@ -84,7 +84,11 @@ public class BackupManager {
         if (googleDriveEnabled) {
             this.googleDriveStorage = new GoogleDriveStorage(
                     plugin.getLogger(),
+                    plugin.getConfig().getString("google-drive.auth-mode", "OAUTH"),
                     resolveConfiguredFile(plugin.getConfig().getString("google-drive.service-account-file", "plugins/PaperBackup/google-service-account.json")),
+                    plugin.getConfig().getString("google-drive.oauth.client-id", ""),
+                    plugin.getConfig().getString("google-drive.oauth.client-secret", ""),
+                    plugin.getConfig().getString("google-drive.oauth.refresh-token", ""),
                     plugin.getConfig().getString("google-drive.folder-id", ""),
                     plugin.getConfig().getInt("google-drive.max-backups", maxBackups),
                     plugin.getConfig().getLong("google-drive.max-total-size-mb", maxTotalSizeMb),
@@ -200,10 +204,20 @@ public class BackupManager {
                     uploadResult.fileName(), durationSeconds));
             return true;
         } catch (IOException | GeneralSecurityException exception) {
-            plugin.getLogger().severe("Google Drive backup failed: " + exception.getMessage());
-            notifyAdmins("&c[PaperBackup] Google Drive backup failed: " + exception.getMessage());
+            String message = getGoogleDriveFailureMessage(exception);
+            plugin.getLogger().severe("Google Drive backup failed: " + message);
+            notifyAdmins("&c[PaperBackup] Google Drive backup failed: " + message);
             return false;
         }
+    }
+
+    private String getGoogleDriveFailureMessage(Exception exception) {
+        String message = exception.getMessage();
+        if (message != null && message.contains("Service Accounts do not have storage quota")) {
+            return "Service account cannot upload to a normal personal Google Drive because it has no storage quota. "
+                    + "Use google-drive.auth-mode: OAUTH, or use SERVICE_ACCOUNT only with a Google Workspace Shared Drive.";
+        }
+        return message == null ? exception.getClass().getSimpleName() : message;
     }
 
     private void zipDirectory(Path root, ZipOutputStream zipOutput, File currentZipFile) throws IOException {

@@ -35,10 +35,23 @@ save-worlds-before-backup: true
 # No local backup-*.zip file is created on the server.
 google-drive:
   enabled: false
-  # Service account JSON path. Relative paths are resolved from the server root.
+  # OAUTH = use your Google account quota. Recommended for normal personal Google Drive.
+  # SERVICE_ACCOUNT = only for Google Workspace Shared Drives or advanced domain delegation.
+  auth-mode: "OAUTH"
+
+  # Service account JSON path. Used only when auth-mode is SERVICE_ACCOUNT.
+  # Relative paths are resolved from the server root.
   service-account-file: "plugins/PaperBackup/google-service-account.json"
+
+  # OAuth credentials. Used when auth-mode is OAUTH.
+  # The refresh token must be generated with the Google Drive scope:
+  # https://www.googleapis.com/auth/drive
+  oauth:
+    client-id: "PUT_OAUTH_CLIENT_ID_HERE"
+    client-secret: "PUT_OAUTH_CLIENT_SECRET_HERE"
+    refresh-token: "PUT_OAUTH_REFRESH_TOKEN_HERE"
+
   # Google Drive folder ID where backups are uploaded.
-  # Share this folder with the service account email from the JSON file.
   folder-id: "PUT_GOOGLE_DRIVE_FOLDER_ID_HERE"
   # Retention for files in the Google Drive folder.
   # Only backup-*.zip files in this folder are touched.
