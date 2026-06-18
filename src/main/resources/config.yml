@@ -5,6 +5,10 @@ backup-folder: "backups"
 # Set to -1 to disable this limit.
 max-backups: 10
 
+# Safety floor for automatic cleanup.
+# PaperBackup will never delete below this many backup-*.zip files, even if size/count limits are too strict.
+minimum-backups-to-keep: 1
+
 # Maximum total size of all backups in the backup folder (in Megabytes).
 # Set to -1 to disable this limit.
 # Example: 10240 is 10 GB.
@@ -13,6 +17,14 @@ max-total-size-mb: 10240
 # How often (in minutes) to perform automated backups.
 # Set to 0 or -1 to disable automatic backups.
 backup-interval-minutes: 60
+
+# Delay before a missed scheduled backup starts after server boot, in seconds.
+# This gives worlds and other plugins time to finish startup.
+startup-delay-seconds: 60
+
+# true = if the server was offline when the next backup time passed, run one backup after startup-delay-seconds.
+# false = skip missed backups and schedule the next future interval.
+catch-up-missed-backup-on-start: true
 
 # Save all loaded worlds on the main thread before the async ZIP task starts.
 # This makes world files on disk more consistent for backups.

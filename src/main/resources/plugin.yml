@@ -8,7 +8,7 @@ commands:
   backup:
     description: Control backup system.
     permission: backup.admin
-    usage: /<command> [run|reload]
+    usage: /<command> [run|status|reload]
 permissions:
   backup.admin:
     description: Allows administration of server backups.

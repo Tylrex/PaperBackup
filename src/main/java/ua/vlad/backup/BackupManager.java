@@ -20,6 +20,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -34,6 +35,7 @@ public class BackupManager {
     private File backupDir;
     private int maxBackups;
     private long maxTotalSizeMb;
+    private int minimumBackupsToKeep;
     private boolean saveWorldsBeforeBackup;
     private List<String> excludePaths;
 
@@ -47,6 +49,9 @@ public class BackupManager {
         this.serverRoot = canonicalOrAbsolute(serverRoot);
         this.backupDir = canonicalOrAbsolute(backupDir);
         this.excludePaths = normalizeExcludes(excludePaths);
+        this.maxBackups = -1;
+        this.maxTotalSizeMb = -1;
+        this.minimumBackupsToKeep = 1;
     }
 
     public void loadConfig() {
@@ -69,6 +74,7 @@ public class BackupManager {
 
         this.maxBackups = plugin.getConfig().getInt("max-backups", 10);
         this.maxTotalSizeMb = plugin.getConfig().getLong("max-total-size-mb", 10240);
+        this.minimumBackupsToKeep = Math.max(1, plugin.getConfig().getInt("minimum-backups-to-keep", 1));
         this.saveWorldsBeforeBackup = plugin.getConfig().getBoolean("save-worlds-before-backup", true);
         this.excludePaths = normalizeExcludes(plugin.getConfig().getStringList("exclude-paths"));
     }
@@ -78,9 +84,16 @@ public class BackupManager {
     }
 
     public void runBackup(boolean manual) {
+        runBackup(manual, null);
+    }
+
+    public void runBackup(boolean manual, Consumer<Boolean> completionCallback) {
         if (!backupRunning.compareAndSet(false, true)) {
             if (manual) {
                 notifyAdmins("&e[PaperBackup] Backup is already in progress.");
+            }
+            if (completionCallback != null) {
+                completionCallback.accept(false);
             }
             return;
         }
@@ -90,10 +103,14 @@ public class BackupManager {
         }
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            boolean success = false;
             try {
-                createBackup();
+                success = createBackup();
             } finally {
                 backupRunning.set(false);
+                if (completionCallback != null) {
+                    completionCallback.accept(success);
+                }
             }
         });
     }
@@ -104,14 +121,14 @@ public class BackupManager {
         }
     }
 
-    private void createBackup() {
+    private boolean createBackup() {
         long startTime = System.currentTimeMillis();
         notifyAdmins("&a[PaperBackup] Starting server backup...");
 
         if (!backupDir.exists() && !backupDir.mkdirs()) {
             plugin.getLogger().severe("Failed to create backup directory: " + backupDir.getPath());
             notifyAdmins("&c[PaperBackup] Failed to create backup directory.");
-            return;
+            return false;
         }
 
         String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(new Date());
@@ -124,7 +141,7 @@ public class BackupManager {
             plugin.getLogger().severe("Failed to write backup zip: " + exception.getMessage());
             notifyAdmins("&c[PaperBackup] Backup failed: " + exception.getMessage());
             deletePartialBackup(zipFile);
-            return;
+            return false;
         }
 
         long durationSeconds = (System.currentTimeMillis() - startTime) / 1000;
@@ -137,6 +154,7 @@ public class BackupManager {
                 zipFile.getName(), sizeMb, durationSeconds));
 
         pruneOldBackups();
+        return true;
     }
 
     private void zipDirectory(Path root, ZipOutputStream zipOutput, File currentZipFile) throws IOException {
@@ -249,13 +267,21 @@ public class BackupManager {
     }
 
     private void pruneOldBackups() {
-        File[] files = backupDir.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".zip"));
+        File[] files = backupDir.listFiles((dir, name) -> {
+            String lowerName = name.toLowerCase(Locale.ROOT);
+            return lowerName.startsWith("backup-") && lowerName.endsWith(".zip");
+        });
         if (files == null || files.length == 0) {
             return;
         }
 
         List<File> zipFiles = new ArrayList<>(List.of(files));
         zipFiles.sort(Comparator.comparingLong(File::lastModified));
+
+        plugin.getLogger().info(String.format(Locale.ROOT,
+                "Backup cleanup check: files=%d, total=%.2f MB, max-backups=%d, minimum-backups-to-keep=%d, max-total-size-mb=%d",
+                zipFiles.size(), calculateTotalSize(zipFiles) / (1024.0 * 1024.0),
+                maxBackups, minimumBackupsToKeep, maxTotalSizeMb));
 
         pruneByTotalSize(zipFiles);
         pruneByCount(zipFiles);
@@ -268,7 +294,7 @@ public class BackupManager {
 
         long maxTotalSizeBytes = maxTotalSizeMb * 1024L * 1024L;
         long currentTotalSize = calculateTotalSize(zipFiles);
-        while (currentTotalSize > maxTotalSizeBytes && !zipFiles.isEmpty()) {
+        while (currentTotalSize > maxTotalSizeBytes && zipFiles.size() > minimumBackupsToKeep) {
             File oldest = zipFiles.remove(0);
             long fileSize = oldest.length();
             if (oldest.delete()) {
@@ -288,6 +314,9 @@ public class BackupManager {
         }
 
         while (zipFiles.size() > maxBackups) {
+            if (zipFiles.size() <= minimumBackupsToKeep) {
+                return;
+            }
             File oldest = zipFiles.remove(0);
             if (oldest.delete()) {
                 plugin.getLogger().info("Deleted oldest backup due to count limit: " + oldest.getName());

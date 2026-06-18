@@ -27,6 +27,7 @@ public class BackupCommand implements CommandExecutor, TabCompleter {
         if (args.length == 0) {
             sender.sendMessage(color("&6=== PaperBackup ==="));
             sender.sendMessage(color("&e/backup run &7- Start backup manually"));
+            sender.sendMessage(color("&e/backup status &7- Show backup schedule and retention status"));
             sender.sendMessage(color("&e/backup reload &7- Reload configuration"));
             return true;
         }
@@ -39,6 +40,11 @@ public class BackupCommand implements CommandExecutor, TabCompleter {
             }
             sender.sendMessage(color("&aStarting manual backup..."));
             plugin.getBackupManager().runBackup(true);
+            return true;
+        } else if (subCommand.equals("status")) {
+            for (String line : plugin.getStatusLines()) {
+                sender.sendMessage(color(line));
+            }
             return true;
         } else if (subCommand.equals("reload")) {
             plugin.reloadPlugin();
@@ -60,6 +66,7 @@ public class BackupCommand implements CommandExecutor, TabCompleter {
         if (args.length == 1) {
             String input = args[0].toLowerCase();
             if ("run".startsWith(input)) completions.add("run");
+            if ("status".startsWith(input)) completions.add("status");
             if ("reload".startsWith(input)) completions.add("reload");
         }
 
