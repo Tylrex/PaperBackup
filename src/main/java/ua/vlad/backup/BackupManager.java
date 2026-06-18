@@ -1,28 +1,40 @@
 package ua.vlad.backup;
 
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.World;
+
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public class BackupManager {
 
+    private static final int COPY_BUFFER_SIZE = 8192;
+
     private final PaperBackup plugin;
-    private final AtomicBoolean isBackupRunning = new AtomicBoolean(false);
-    
+    private final AtomicBoolean backupRunning = new AtomicBoolean(false);
+
     private File serverRoot;
     private File backupDir;
     private int maxBackups;
     private long maxTotalSizeMb;
+    private boolean saveWorldsBeforeBackup;
     private List<String> excludePaths;
 
     public BackupManager(PaperBackup plugin) {
@@ -30,168 +42,165 @@ public class BackupManager {
         loadConfig();
     }
 
-    // Package-private constructor for testing purposes
     BackupManager(File serverRoot, File backupDir, List<String> excludePaths) {
         this.plugin = null;
-        this.serverRoot = serverRoot;
-        this.backupDir = backupDir;
-        this.excludePaths = excludePaths;
+        this.serverRoot = canonicalOrAbsolute(serverRoot);
+        this.backupDir = canonicalOrAbsolute(backupDir);
+        this.excludePaths = normalizeExcludes(excludePaths);
     }
 
     public void loadConfig() {
-        plugin.reloadConfig();
-        
+        if (plugin == null) {
+            return;
+        }
+
         try {
             this.serverRoot = plugin.getServer().getWorldContainer().getCanonicalFile();
-        } catch (IOException e) {
+        } catch (IOException exception) {
             this.serverRoot = new File(".").getAbsoluteFile();
         }
 
         String folderPath = plugin.getConfig().getString("backup-folder", "backups");
-        File folder = new File(folderPath);
-        if (!folder.isAbsolute()) {
-            folder = new File(serverRoot, folderPath);
+        File configuredFolder = new File(folderPath == null || folderPath.isBlank() ? "backups" : folderPath);
+        if (!configuredFolder.isAbsolute()) {
+            configuredFolder = new File(serverRoot, configuredFolder.getPath());
         }
-        try {
-            this.backupDir = folder.getCanonicalFile();
-        } catch (IOException e) {
-            this.backupDir = folder.getAbsoluteFile();
-        }
+        this.backupDir = canonicalOrAbsolute(configuredFolder);
 
         this.maxBackups = plugin.getConfig().getInt("max-backups", 10);
         this.maxTotalSizeMb = plugin.getConfig().getLong("max-total-size-mb", 10240);
-        
-        List<String> rawExcludes = plugin.getConfig().getStringList("exclude-paths");
-        this.excludePaths = new ArrayList<>();
-        if (rawExcludes != null) {
-            for (String raw : rawExcludes) {
-                String trimmed = raw.trim();
-                if (!trimmed.isEmpty()) {
-                    this.excludePaths.add(trimmed);
-                }
-            }
-        }
+        this.saveWorldsBeforeBackup = plugin.getConfig().getBoolean("save-worlds-before-backup", true);
+        this.excludePaths = normalizeExcludes(plugin.getConfig().getStringList("exclude-paths"));
     }
 
     public boolean isRunning() {
-        return isBackupRunning.get();
+        return backupRunning.get();
     }
 
     public void runBackup(boolean manual) {
-        if (!isBackupRunning.compareAndSet(false, true)) {
+        if (!backupRunning.compareAndSet(false, true)) {
             if (manual) {
-                notifyAdmins("§e[PaperBackup] Backup is already in progress!");
+                notifyAdmins("&e[PaperBackup] Backup is already in progress.");
             }
             return;
         }
 
-        // Run the task asynchronously
+        if (plugin != null && saveWorldsBeforeBackup) {
+            saveWorlds();
+        }
+
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            long startTime = System.currentTimeMillis();
-            notifyAdmins("§a[PaperBackup] Starting server backup...");
-
-            if (!backupDir.exists()) {
-                if (!backupDir.mkdirs()) {
-                    plugin.getLogger().severe("Failed to create backup directory: " + backupDir.getPath());
-                    notifyAdmins("§c[PaperBackup] Failed to create backup directory!");
-                    isBackupRunning.set(false);
-                    return;
-                }
-            }
-
-            String timeStamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
-            File zipFile = new File(backupDir, "backup-" + timeStamp + ".zip");
-
-            try (FileOutputStream fos = new FileOutputStream(zipFile);
-                 ZipOutputStream zos = new ZipOutputStream(fos)) {
-                
-                zos.setLevel(ZipOutputStream.DEFLATED);
-                zipDirectory(serverRoot, zos, zipFile);
-                
-            } catch (IOException e) {
-                plugin.getLogger().severe("Failed to write backup zip: " + e.getMessage());
-                notifyAdmins("§c[PaperBackup] Backup failed due to an error: " + e.getMessage());
-                if (zipFile.exists()) {
-                    zipFile.delete();
-                }
-                isBackupRunning.set(false);
-                return;
-            }
-
-            long duration = (System.currentTimeMillis() - startTime) / 1000;
-            long sizeInBytes = zipFile.length();
-            double sizeInMb = sizeInBytes / (1024.0 * 1024.0);
-
-            plugin.getLogger().info(String.format("Backup finished successfully! File: %s, Size: %.2f MB, Time: %d sec",
-                    zipFile.getName(), sizeInMb, duration));
-            notifyAdmins(String.format("§a[PaperBackup] Backup finished! File: §e%s§a, Size: §e%.2f MB§a, Time: §e%d sec",
-                    zipFile.getName(), sizeInMb, duration));
-
-            // Clean up old backups according to config limits
             try {
-                pruneOldBackups();
-            } catch (Exception e) {
-                plugin.getLogger().warning("Error while pruning old backups: " + e.getMessage());
+                createBackup();
+            } finally {
+                backupRunning.set(false);
             }
-
-            isBackupRunning.set(false);
         });
     }
 
-    private void zipDirectory(File folderToZip, ZipOutputStream zipOut, File currentZipFile) {
-        try {
-            java.nio.file.Files.walkFileTree(folderToZip.toPath(), new java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
-                @Override
-                public java.nio.file.FileVisitResult preVisitDirectory(java.nio.file.Path dir, java.nio.file.attribute.BasicFileAttributes attrs) throws IOException {
-                    File file = dir.toFile();
-                    if (isExcluded(file)) {
-                        return java.nio.file.FileVisitResult.SKIP_SUBTREE;
-                    }
-                    
-                    String relativePath = getRelativePathForZip(file);
-                    if (!relativePath.isEmpty()) {
-                        ZipEntry entry = new ZipEntry(relativePath + "/");
-                        zipOut.putNextEntry(entry);
-                        zipOut.closeEntry();
-                    }
-                    return java.nio.file.FileVisitResult.CONTINUE;
+    private void saveWorlds() {
+        for (World world : Bukkit.getWorlds()) {
+            world.save();
+        }
+    }
+
+    private void createBackup() {
+        long startTime = System.currentTimeMillis();
+        notifyAdmins("&a[PaperBackup] Starting server backup...");
+
+        if (!backupDir.exists() && !backupDir.mkdirs()) {
+            plugin.getLogger().severe("Failed to create backup directory: " + backupDir.getPath());
+            notifyAdmins("&c[PaperBackup] Failed to create backup directory.");
+            return;
+        }
+
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(new Date());
+        File zipFile = new File(backupDir, "backup-" + timestamp + ".zip");
+
+        try (FileOutputStream fileOutput = new FileOutputStream(zipFile);
+             ZipOutputStream zipOutput = new ZipOutputStream(fileOutput)) {
+            zipDirectory(serverRoot.toPath(), zipOutput, zipFile);
+        } catch (IOException exception) {
+            plugin.getLogger().severe("Failed to write backup zip: " + exception.getMessage());
+            notifyAdmins("&c[PaperBackup] Backup failed: " + exception.getMessage());
+            deletePartialBackup(zipFile);
+            return;
+        }
+
+        long durationSeconds = (System.currentTimeMillis() - startTime) / 1000;
+        double sizeMb = zipFile.length() / (1024.0 * 1024.0);
+        plugin.getLogger().info(String.format(Locale.ROOT,
+                "Backup finished successfully. File: %s, Size: %.2f MB, Time: %d sec",
+                zipFile.getName(), sizeMb, durationSeconds));
+        notifyAdmins(String.format(Locale.ROOT,
+                "&a[PaperBackup] Backup finished. File: &e%s&a, Size: &e%.2f MB&a, Time: &e%d sec",
+                zipFile.getName(), sizeMb, durationSeconds));
+
+        pruneOldBackups();
+    }
+
+    private void zipDirectory(Path root, ZipOutputStream zipOutput, File currentZipFile) throws IOException {
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                File directory = dir.toFile();
+                if (isExcluded(directory)) {
+                    return FileVisitResult.SKIP_SUBTREE;
                 }
 
-                @Override
-                public java.nio.file.FileVisitResult visitFile(java.nio.file.Path file, java.nio.file.attribute.BasicFileAttributes attrs) {
-                    File f = file.toFile();
-                    if (isExcluded(f) || f.equals(currentZipFile)) {
-                        return java.nio.file.FileVisitResult.CONTINUE;
-                    }
+                String relativePath = getRelativePathForZip(directory);
+                if (!relativePath.isEmpty()) {
+                    zipOutput.putNextEntry(new ZipEntry(relativePath + "/"));
+                    zipOutput.closeEntry();
+                }
+                return FileVisitResult.CONTINUE;
+            }
 
-                    String relativePath = getRelativePathForZip(f);
-                    try {
-                        ZipEntry zipEntry = new ZipEntry(relativePath);
-                        zipOut.putNextEntry(zipEntry);
-                        
-                        try (java.io.FileInputStream fis = new java.io.FileInputStream(f)) {
-                            byte[] buffer = new byte[8192];
-                            int length;
-                            while ((length = fis.read(buffer)) >= 0) {
-                                zipOut.write(buffer, 0, length);
-                            }
-                        }
-                        zipOut.closeEntry();
-                    } catch (IOException e) {
-                        // Skip files that cannot be read (like locks, or files deleted mid-operation)
-                        plugin.getLogger().warning("Skipping file " + f.getName() + " due to read error: " + e.getMessage());
-                    }
-                    return java.nio.file.FileVisitResult.CONTINUE;
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                File source = file.toFile();
+                if (source.equals(currentZipFile) || isExcluded(source)) {
+                    return FileVisitResult.CONTINUE;
                 }
 
-                @Override
-                public java.nio.file.FileVisitResult visitFileFailed(java.nio.file.Path file, IOException exc) {
-                    plugin.getLogger().warning("Failed to access path " + file.toString() + ": " + exc.getMessage());
-                    return java.nio.file.FileVisitResult.CONTINUE;
+                addFileToZip(source, zipOutput);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exception) {
+                plugin.getLogger().warning("Skipping inaccessible path " + file + ": " + exception.getMessage());
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    private void addFileToZip(File source, ZipOutputStream zipOutput) {
+        String relativePath = getRelativePathForZip(source);
+        if (relativePath.isEmpty()) {
+            return;
+        }
+
+        boolean entryOpen = false;
+        try (FileInputStream input = new FileInputStream(source)) {
+            zipOutput.putNextEntry(new ZipEntry(relativePath));
+            entryOpen = true;
+
+            byte[] buffer = new byte[COPY_BUFFER_SIZE];
+            int length;
+            while ((length = input.read(buffer)) >= 0) {
+                zipOutput.write(buffer, 0, length);
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Skipping file " + source.getPath() + ": " + exception.getMessage());
+        } finally {
+            if (entryOpen) {
+                try {
+                    zipOutput.closeEntry();
+                } catch (IOException exception) {
+                    plugin.getLogger().warning("Could not close zip entry for " + source.getPath() + ": " + exception.getMessage());
                 }
-            });
-        } catch (IOException e) {
-            plugin.getLogger().severe("Error walking server root: " + e.getMessage());
+            }
         }
     }
 
@@ -201,31 +210,25 @@ public class BackupManager {
             String serverRootCanonical = serverRoot.getCanonicalPath();
             String backupDirCanonical = backupDir.getCanonicalPath();
 
-            // Always exclude the backup folder itself to avoid recursive backing up
             if (fileCanonical.equals(backupDirCanonical) || fileCanonical.startsWith(backupDirCanonical + File.separator)) {
                 return true;
             }
-
             if (fileCanonical.equals(serverRootCanonical)) {
                 return false;
             }
-
             if (!fileCanonical.startsWith(serverRootCanonical + File.separator)) {
-                return true; // Outside server directory
+                return true;
             }
 
-            String relativePath = fileCanonical.substring(serverRootCanonical.length() + 1);
-            String relativePathSlash = relativePath.replace('\\', '/');
-
+            String relativePath = fileCanonical.substring(serverRootCanonical.length() + 1).replace('\\', '/');
             for (String exclude : excludePaths) {
-                String excludeSlash = exclude.replace('\\', '/');
-                if (relativePathSlash.equals(excludeSlash) || relativePathSlash.startsWith(excludeSlash + "/")) {
+                if (relativePath.equals(exclude) || relativePath.startsWith(exclude + "/")) {
                     return true;
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException exception) {
             if (plugin != null) {
-                plugin.getLogger().warning("Could not check exclusions for " + file.getPath() + ": " + e.getMessage());
+                plugin.getLogger().warning("Could not check exclusions for " + file.getPath() + ": " + exception.getMessage());
             }
             return true;
         }
@@ -239,74 +242,116 @@ public class BackupManager {
             if (fileCanonical.equals(serverRootCanonical)) {
                 return "";
             }
-            String rel = fileCanonical.substring(serverRootCanonical.length() + 1);
-            return rel.replace('\\', '/');
-        } catch (IOException e) {
+            return fileCanonical.substring(serverRootCanonical.length() + 1).replace('\\', '/');
+        } catch (IOException exception) {
             return "";
         }
     }
 
     private void pruneOldBackups() {
-        File[] files = backupDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".zip"));
+        File[] files = backupDir.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".zip"));
         if (files == null || files.length == 0) {
             return;
         }
 
-        // Sort files by last modified date (oldest first)
-        List<File> zipFiles = new ArrayList<>(Arrays.asList(files));
+        List<File> zipFiles = new ArrayList<>(List.of(files));
         zipFiles.sort(Comparator.comparingLong(File::lastModified));
 
-        // 1. Check max total size limit
-        if (maxTotalSizeMb > 0) {
-            long maxTotalSizeBytes = maxTotalSizeMb * 1024 * 1024;
-            long currentTotalSize = calculateTotalSize(zipFiles);
+        pruneByTotalSize(zipFiles);
+        pruneByCount(zipFiles);
+    }
 
-            while (currentTotalSize > maxTotalSizeBytes && !zipFiles.isEmpty()) {
-                File oldest = zipFiles.remove(0);
-                long fileSize = oldest.length();
-                if (oldest.delete()) {
-                    currentTotalSize -= fileSize;
-                    plugin.getLogger().info("Deleted oldest backup (size limit exceeded): " + oldest.getName());
-                    notifyAdmins("§6[PaperBackup] Deleted oldest backup due to size limit: §e" + oldest.getName());
-                } else {
-                    plugin.getLogger().warning("Failed to delete backup file: " + oldest.getName());
-                    break;
-                }
-            }
+    private void pruneByTotalSize(List<File> zipFiles) {
+        if (maxTotalSizeMb <= 0) {
+            return;
         }
 
-        // 2. Check max backup count limit
-        if (maxBackups > 0) {
-            while (zipFiles.size() > maxBackups) {
-                File oldest = zipFiles.remove(0);
-                if (oldest.delete()) {
-                    plugin.getLogger().info("Deleted oldest backup (count limit exceeded): " + oldest.getName());
-                    notifyAdmins("§6[PaperBackup] Deleted oldest backup due to count limit: §e" + oldest.getName());
-                } else {
-                    plugin.getLogger().warning("Failed to delete backup file: " + oldest.getName());
-                    break;
-                }
+        long maxTotalSizeBytes = maxTotalSizeMb * 1024L * 1024L;
+        long currentTotalSize = calculateTotalSize(zipFiles);
+        while (currentTotalSize > maxTotalSizeBytes && !zipFiles.isEmpty()) {
+            File oldest = zipFiles.remove(0);
+            long fileSize = oldest.length();
+            if (oldest.delete()) {
+                currentTotalSize -= fileSize;
+                plugin.getLogger().info("Deleted oldest backup due to size limit: " + oldest.getName());
+                notifyAdmins("&6[PaperBackup] Deleted oldest backup due to size limit: &e" + oldest.getName());
+            } else {
+                plugin.getLogger().warning("Failed to delete backup file: " + oldest.getName());
+                return;
+            }
+        }
+    }
+
+    private void pruneByCount(List<File> zipFiles) {
+        if (maxBackups <= 0) {
+            return;
+        }
+
+        while (zipFiles.size() > maxBackups) {
+            File oldest = zipFiles.remove(0);
+            if (oldest.delete()) {
+                plugin.getLogger().info("Deleted oldest backup due to count limit: " + oldest.getName());
+                notifyAdmins("&6[PaperBackup] Deleted oldest backup due to count limit: &e" + oldest.getName());
+            } else {
+                plugin.getLogger().warning("Failed to delete backup file: " + oldest.getName());
+                return;
             }
         }
     }
 
     private long calculateTotalSize(List<File> files) {
         long total = 0;
-        for (File f : files) {
-            total += f.length();
+        for (File file : files) {
+            total += file.length();
         }
         return total;
     }
 
+    private void deletePartialBackup(File zipFile) {
+        if (zipFile.exists() && !zipFile.delete()) {
+            plugin.getLogger().warning("Could not delete failed partial backup: " + zipFile.getName());
+        }
+    }
+
     private void notifyAdmins(String message) {
-        // Send console message immediately
-        Bukkit.getConsoleSender().sendMessage(message);
-        
-        // Notify online admin players on the main thread to ensure API safety
+        String colored = ChatColor.translateAlternateColorCodes('&', message);
         Bukkit.getScheduler().runTask(plugin, () -> {
+            Bukkit.getConsoleSender().sendMessage(colored);
             Bukkit.getOnlinePlayers().stream()
                     .filter(player -> player.hasPermission("backup.admin"))
-                    .forEach(player -> player.sendMessage(message));
+                    .forEach(player -> player.sendMessage(colored));
         });
+    }
+
+    private static File canonicalOrAbsolute(File file) {
+        try {
+            return file.getCanonicalFile();
+        } catch (IOException exception) {
+            return file.getAbsoluteFile();
+        }
+    }
+
+    private static List<String> normalizeExcludes(List<String> rawExcludes) {
+        List<String> normalized = new ArrayList<>();
+        if (rawExcludes == null) {
+            return normalized;
+        }
+
+        for (String raw : rawExcludes) {
+            if (raw == null) {
+                continue;
+            }
+            String value = raw.trim().replace('\\', '/');
+            while (value.startsWith("./")) {
+                value = value.substring(2);
+            }
+            while (value.endsWith("/") && value.length() > 1) {
+                value = value.substring(0, value.length() - 1);
+            }
+            if (!value.isEmpty()) {
+                normalized.add(value);
+            }
+        }
+        return normalized;
     }
 }

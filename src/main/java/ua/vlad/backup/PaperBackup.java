@@ -1,8 +1,15 @@
 package ua.vlad.backup;
 
 import org.bukkit.Bukkit;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 
 public final class PaperBackup extends JavaPlugin {
 
@@ -11,18 +18,17 @@ public final class PaperBackup extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        // Save default config if not present
         saveDefaultConfig();
+        migrateConfig();
 
-        // Initialize BackupManager
         this.backupManager = new BackupManager(this);
 
-        // Register command
         if (getCommand("backup") != null) {
-            getCommand("backup").setExecutor(new BackupCommand(this));
+            BackupCommand backupCommand = new BackupCommand(this);
+            getCommand("backup").setExecutor(backupCommand);
+            getCommand("backup").setTabCompleter(backupCommand);
         }
 
-        // Schedule auto backups
         scheduleBackupTask();
 
         getLogger().info("PaperBackup has been enabled!");
@@ -36,6 +42,7 @@ public final class PaperBackup extends JavaPlugin {
 
     public void reloadPlugin() {
         reloadConfig();
+        migrateConfig();
         cancelBackupTask();
         this.backupManager.loadConfig();
         scheduleBackupTask();
@@ -50,7 +57,7 @@ public final class PaperBackup extends JavaPlugin {
 
         long ticks = intervalMinutes * 60L * 20L;
         
-        scheduledTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+        scheduledTask = Bukkit.getScheduler().runTaskTimer(this, () -> {
             getLogger().info("Starting scheduled server backup...");
             backupManager.runBackup(false);
         }, ticks, ticks);
@@ -67,5 +74,23 @@ public final class PaperBackup extends JavaPlugin {
 
     public BackupManager getBackupManager() {
         return backupManager;
+    }
+
+    private void migrateConfig() {
+        try (InputStream stream = getResource("config.yml")) {
+            if (stream == null) {
+                getLogger().warning("Could not find bundled config.yml for migration.");
+                return;
+            }
+
+            FileConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8));
+            FileConfiguration config = getConfig();
+            config.setDefaults(defaults);
+            config.options().copyDefaults(true);
+            saveConfig();
+            reloadConfig();
+        } catch (IOException exception) {
+            getLogger().warning("Could not migrate config.yml: " + exception.getMessage());
+        }
     }
 }

@@ -1,11 +1,10 @@
 package ua.vlad.backup;
 
+import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,40 +18,40 @@ public class BackupCommand implements CommandExecutor, TabCompleter {
     }
 
     @Override
-    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("backup.admin")) {
-            sender.sendMessage("§cYou do not have permission to run this command.");
+            sender.sendMessage(color("&cYou do not have permission to run this command."));
             return true;
         }
 
         if (args.length == 0) {
-            sender.sendMessage("§6=== PaperBackup ===");
-            sender.sendMessage("§e/backup run §7- Start backup manually");
-            sender.sendMessage("§e/backup reload §7- Reload configuration");
+            sender.sendMessage(color("&6=== PaperBackup ==="));
+            sender.sendMessage(color("&e/backup run &7- Start backup manually"));
+            sender.sendMessage(color("&e/backup reload &7- Reload configuration"));
             return true;
         }
 
         String subCommand = args[0].toLowerCase();
         if (subCommand.equals("run")) {
             if (plugin.getBackupManager().isRunning()) {
-                sender.sendMessage("§cBackup is already running!");
+                sender.sendMessage(color("&cBackup is already running!"));
                 return true;
             }
-            sender.sendMessage("§aStarting manual backup...");
+            sender.sendMessage(color("&aStarting manual backup..."));
             plugin.getBackupManager().runBackup(true);
             return true;
         } else if (subCommand.equals("reload")) {
             plugin.reloadPlugin();
-            sender.sendMessage("§aPaperBackup configuration has been reloaded!");
+            sender.sendMessage(color("&aPaperBackup configuration has been reloaded!"));
             return true;
         } else {
-            sender.sendMessage("§cUnknown subcommand. Use /backup for help.");
+            sender.sendMessage(color("&cUnknown subcommand. Use /backup for help."));
             return true;
         }
     }
 
     @Override
-    public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> completions = new ArrayList<>();
         if (!sender.hasPermission("backup.admin")) {
             return completions;
@@ -65,5 +64,9 @@ public class BackupCommand implements CommandExecutor, TabCompleter {
         }
 
         return completions;
+    }
+
+    private String color(String message) {
+        return ChatColor.translateAlternateColorCodes('&', message);
     }
 }

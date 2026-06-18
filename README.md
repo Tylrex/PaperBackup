@@ -1,90 +1,110 @@
 # PaperBackup
 
-**PaperBackup** — це легкий і швидкий плагін для резервного копіювання вашого Minecraft-сервера (Paper 1.21.1) у форматі `.zip`. Плагін працює асинхронно, тому процес архівації не викликає лагів або зависань сервера.
+PaperBackup is a lightweight Paper/Purpur plugin for creating ZIP backups of a
+Minecraft server. It targets Paper/Purpur 1.21.1 and Java 21.
 
-## Особливості
-* 📦 **Стиснення в ZIP**: Повний бекап сервера зберігається в один zip-архів.
-* ⚡ **Асинхронність**: Створення резервної копії виконується в окремому потоці (безпечно для TPS сервера).
-* ⚙️ **Гнучке ігнорування**: Можливість виключити непотрібні файли та папки (наприклад, логи, кеші, карти динамічних мап тощо) через конфігурацію.
-* 🧹 **Ротація архівів (Cleanup)**:
-  * Обмеження за максимальною кількістю збережених копій.
-  * Обмеження за загальним розміром папки з копіями (автоматичне видалення найстаріших архівів при перевищенні ліміту).
-* ⏰ **Автоматичний запуск**: Регулярний бекап за розкладом.
-* 💻 **Адмін-команди**: Можливість запустити резервне копіювання або оновити конфіг вручну без перезавантаження всього сервера.
+Backups run asynchronously, so the archive process is kept away from the main
+server thread. The plugin can run backups on a schedule, keep only a configured
+number of archives, and delete old archives when the backup folder grows beyond
+a configured size.
 
----
+## Features
 
-## Налаштування (`config.yml`)
+- Creates full server backups as `.zip` archives.
+- Runs backup work asynchronously.
+- Automatically excludes the backup folder to avoid recursive backups.
+- Supports configurable excluded files and folders.
+- Supports scheduled automatic backups.
+- Supports manual backups through an admin command.
+- Prunes old backups by maximum count and maximum total folder size.
+- Can save loaded worlds before the ZIP task starts.
 
-Після першого запуску плагіну в папці `plugins/PaperBackup` буде створено файл `config.yml`. Ви можете налаштувати такі параметри:
+## Requirements
+
+- Paper or Purpur 1.21.1
+- Java 21
+
+## Installation
+
+1. Download the built `PaperBackup` jar.
+2. Put it into the server `plugins` folder.
+3. Restart the server.
+4. Edit `plugins/PaperBackup/config.yml` if needed.
+5. Run `/backup reload` after changing the config.
+
+## Commands
+
+All commands require the `backup.admin` permission. Operators receive this
+permission by default.
+
+| Command | Description |
+| --- | --- |
+| `/backup` | Show command help. |
+| `/backup run` | Start a manual backup. |
+| `/backup reload` | Reload `config.yml` and reschedule automatic backups. |
+
+## Configuration
+
+The plugin creates `plugins/PaperBackup/config.yml` on first startup.
 
 ```yaml
-# Шлях до папки, де зберігатимуться архіви. 
-# Може бути відносним (від кореня сервера, наприклад, 'backups') або абсолютним.
+# Folder where backups are saved. Relative paths are resolved from the server root.
 backup-folder: "backups"
 
-# Максимальна кількість архівів, які потрібно зберігати.
-# Встановіть -1, щоб вимкнути це обмеження.
+# Maximum number of backup archives to keep.
+# Set to -1 to disable this limit.
 max-backups: 10
 
-# Максимальний сумарний розмір усіх архівів у папці бекапів (у Мегабайтах).
-# При перевищенні ліміту видалятимуться найстаріші архіви.
-# Встановіть -1, щоб вимкнути ліміт. (Наприклад, 10240 MB = 10 GB).
+# Maximum total size of all backup archives in megabytes.
+# Set to -1 to disable this limit.
 max-total-size-mb: 10240
 
-# Як часто (у хвилинах) виконувати автоматичне копіювання.
-# Встановіть 0 або -1, щоб вимкнути авто-бекапи.
+# Automatic backup interval in minutes.
+# Set to 0 or -1 to disable scheduled backups.
 backup-interval-minutes: 60
 
-# Файли та папки, які НЕ потрібно включати в архів.
-# Шляхи вказуються відносно кореня сервера.
+# Save all loaded worlds before the async ZIP task starts.
+save-worlds-before-backup: true
+
+# Files and folders excluded from backups.
+# Paths are relative to the server root.
 exclude-paths:
-  - "backups"                       # Папку з бекапами обов'язково треба виключати!
+  - "backups"
   - "cache"
   - "logs"
   - "plugins/PaperBackup/backups"
   - ".git"
   - "crash-reports"
-  - "session.lock"                  # Заблоковані файли краще ігнорувати
+  - "webdoc"
+  - "session.lock"
   - "world/session.lock"
   - "world_nether/session.lock"
   - "world_the_end/session.lock"
 ```
 
----
+## Notes
 
-## Команди та Дозволи
+- The configured backup folder is always excluded automatically, even if it is
+  not listed in `exclude-paths`.
+- When `save-worlds-before-backup` is enabled, PaperBackup calls `World#save()`
+  for loaded worlds on the main thread before the async ZIP task starts.
+- Files that are locked, deleted during the backup, or otherwise unreadable are
+  skipped and logged instead of crashing the backup.
+- If another backup is already running, `/backup run` will not start a second
+  backup.
 
-Усі операції вимагають наявності права **`backup.admin`** (за замовчуванням мають оператори сервера `op`).
+## Building
 
-* `/backup` — Показати список доступних команд.
-* `/backup run` — Запустити створення резервної копії вручну прямо зараз.
-* `/backup reload` — Перезавантажити файл конфігурації `config.yml` та оновити таймер автоматичного бекапу.
+This project uses Maven:
 
----
-
-## Встановлення
-
-1. Завантажте файл `PaperBackup-1.0-SNAPSHOT.jar` у папку `plugins` вашого сервера.
-2. Запустіть або перезавантажте сервер (`/reload` або повний перезапуск).
-3. Відредагуйте конфіг `plugins/PaperBackup/config.yml` за потреби.
-4. Виконайте `/backup reload` у консолі чи грі, якщо змінювали конфігурацію.
-
----
-
-## Розробникам
-
-Проєкт використовує **Maven** та **Java 21**. 
-
-### Збирання проєкту:
 ```bash
 mvn clean package
 ```
-Готовий `.jar` файл буде створено в директорії `target/`.
 
-### Тестування:
-Проєкт містить JUnit 5 тести для перевірки логіки виключення файлів:
+The compiled jar is created in `target/`.
+
+Tests can be run with:
+
 ```bash
 mvn test
 ```
-Тести налаштовано на автоматичний запуск у хмарі через GitHub Actions при кожному пуші (CI/CD конфіг знаходиться в `.github/workflows/test.yml`).
