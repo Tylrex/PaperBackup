@@ -1,9 +1,9 @@
 name: PaperBackup
-version: 1.0-SNAPSHOT
+version: 1.0
 main: ua.vlad.backup.PaperBackup
 api-version: '1.21'
 author: Vlad
-description: A plugin to create zip backups of your Paper server.
+description: A plugin to stream zip backups of your Paper server to Google Drive.
 commands:
   backup:
     description: Control backup system.

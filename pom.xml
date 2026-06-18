@@ -5,7 +5,7 @@
 
     <groupId>ua.vlad.backup</groupId>
     <artifactId>PaperBackup</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0</version>
     <packaging>jar</packaging>
 
     <name>PaperBackup</name>
@@ -54,6 +54,7 @@
     </dependencies>
 
     <build>
+        <finalName>PaperBackup-GoogleDrive-${project.version}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
