@@ -8,6 +8,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,6 +38,8 @@ public class BackupManager {
     private long maxTotalSizeMb;
     private int minimumBackupsToKeep;
     private boolean saveWorldsBeforeBackup;
+    private boolean googleDriveEnabled;
+    private GoogleDriveStorage googleDriveStorage;
     private List<String> excludePaths;
 
     public BackupManager(PaperBackup plugin) {
@@ -76,6 +79,18 @@ public class BackupManager {
         this.maxTotalSizeMb = plugin.getConfig().getLong("max-total-size-mb", 10240);
         this.minimumBackupsToKeep = Math.max(1, plugin.getConfig().getInt("minimum-backups-to-keep", 1));
         this.saveWorldsBeforeBackup = plugin.getConfig().getBoolean("save-worlds-before-backup", true);
+        this.googleDriveEnabled = plugin.getConfig().getBoolean("google-drive.enabled", false);
+        this.googleDriveStorage = null;
+        if (googleDriveEnabled) {
+            this.googleDriveStorage = new GoogleDriveStorage(
+                    plugin.getLogger(),
+                    resolveConfiguredFile(plugin.getConfig().getString("google-drive.service-account-file", "plugins/PaperBackup/google-service-account.json")),
+                    plugin.getConfig().getString("google-drive.folder-id", ""),
+                    plugin.getConfig().getInt("google-drive.max-backups", maxBackups),
+                    plugin.getConfig().getLong("google-drive.max-total-size-mb", maxTotalSizeMb),
+                    Math.max(1, plugin.getConfig().getInt("google-drive.minimum-backups-to-keep", minimumBackupsToKeep))
+            );
+        }
         this.excludePaths = normalizeExcludes(plugin.getConfig().getStringList("exclude-paths"));
     }
 
@@ -124,6 +139,12 @@ public class BackupManager {
     private boolean createBackup() {
         long startTime = System.currentTimeMillis();
         notifyAdmins("&a[PaperBackup] Starting server backup...");
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(new Date());
+        String backupFileName = "backup-" + timestamp + ".zip";
+
+        if (googleDriveEnabled) {
+            return createGoogleDriveBackup(startTime, backupFileName);
+        }
 
         if (!backupDir.exists() && !backupDir.mkdirs()) {
             plugin.getLogger().severe("Failed to create backup directory: " + backupDir.getPath());
@@ -131,8 +152,7 @@ public class BackupManager {
             return false;
         }
 
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(new Date());
-        File zipFile = new File(backupDir, "backup-" + timestamp + ".zip");
+        File zipFile = new File(backupDir, backupFileName);
 
         try (FileOutputStream fileOutput = new FileOutputStream(zipFile);
              ZipOutputStream zipOutput = new ZipOutputStream(fileOutput)) {
@@ -155,6 +175,35 @@ public class BackupManager {
 
         pruneOldBackups();
         return true;
+    }
+
+    private boolean createGoogleDriveBackup(long startTime, String backupFileName) {
+        if (googleDriveStorage == null) {
+            plugin.getLogger().severe("Google Drive backup is enabled, but storage is not configured.");
+            notifyAdmins("&c[PaperBackup] Google Drive backup is not configured.");
+            return false;
+        }
+
+        try {
+            GoogleDriveStorage.UploadResult uploadResult = googleDriveStorage.upload(backupFileName, outputStream -> {
+                try (ZipOutputStream zipOutput = new ZipOutputStream(outputStream)) {
+                    zipDirectory(serverRoot.toPath(), zipOutput, null);
+                }
+            });
+
+            long durationSeconds = (System.currentTimeMillis() - startTime) / 1000;
+            plugin.getLogger().info(String.format(Locale.ROOT,
+                    "Google Drive backup finished successfully. File: %s, Drive ID: %s, Time: %d sec",
+                    uploadResult.fileName(), uploadResult.fileId(), durationSeconds));
+            notifyAdmins(String.format(Locale.ROOT,
+                    "&a[PaperBackup] Google Drive backup finished. File: &e%s&a, Time: &e%d sec",
+                    uploadResult.fileName(), durationSeconds));
+            return true;
+        } catch (IOException | GeneralSecurityException exception) {
+            plugin.getLogger().severe("Google Drive backup failed: " + exception.getMessage());
+            notifyAdmins("&c[PaperBackup] Google Drive backup failed: " + exception.getMessage());
+            return false;
+        }
     }
 
     private void zipDirectory(Path root, ZipOutputStream zipOutput, File currentZipFile) throws IOException {
@@ -220,6 +269,15 @@ public class BackupManager {
                 }
             }
         }
+    }
+
+    private File resolveConfiguredFile(String path) {
+        String value = path == null || path.isBlank() ? "plugins/PaperBackup/google-service-account.json" : path;
+        File file = new File(value);
+        if (file.isAbsolute()) {
+            return canonicalOrAbsolute(file);
+        }
+        return canonicalOrAbsolute(new File(serverRoot, value));
     }
 
     boolean isExcluded(File file) {

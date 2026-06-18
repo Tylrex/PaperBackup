@@ -30,6 +30,22 @@ catch-up-missed-backup-on-start: true
 # This makes world files on disk more consistent for backups.
 save-worlds-before-backup: true
 
+# Google Drive storage.
+# When enabled, PaperBackup streams the ZIP directly to Google Drive.
+# No local backup-*.zip file is created on the server.
+google-drive:
+  enabled: false
+  # Service account JSON path. Relative paths are resolved from the server root.
+  service-account-file: "plugins/PaperBackup/google-service-account.json"
+  # Google Drive folder ID where backups are uploaded.
+  # Share this folder with the service account email from the JSON file.
+  folder-id: "PUT_GOOGLE_DRIVE_FOLDER_ID_HERE"
+  # Retention for files in the Google Drive folder.
+  # Only backup-*.zip files in this folder are touched.
+  max-backups: 10
+  minimum-backups-to-keep: 1
+  max-total-size-mb: 10240
+
 # Files and directories to exclude from the backup.
 # Path comparisons are done relative to the server root directory.
 # Backups folder is automatically excluded.

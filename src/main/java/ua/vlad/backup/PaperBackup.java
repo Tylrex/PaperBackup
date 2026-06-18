@@ -142,16 +142,23 @@ public final class PaperBackup extends JavaPlugin {
         lines.add("&6=== PaperBackup Status ===");
         lines.add("&eRunning: &f" + backupManager.isRunning());
         lines.add("&eAutomatic interval: &f" + (intervalMinutes <= 0 ? "disabled" : intervalMinutes + " minutes"));
-        lines.add("&eBackup folder: &f" + getConfig().getString("backup-folder", "backups"));
+        boolean googleDriveEnabled = getConfig().getBoolean("google-drive.enabled", false);
+        lines.add("&eStorage: &f" + (googleDriveEnabled ? "Google Drive (streaming, no local zip)" : "Local folder"));
+        if (googleDriveEnabled) {
+            lines.add("&eGoogle Drive folder ID: &f" + getConfig().getString("google-drive.folder-id", ""));
+        } else {
+            lines.add("&eBackup folder: &f" + getConfig().getString("backup-folder", "backups"));
+        }
         if (intervalMinutes > 0) {
             long nextBackupAt = stateConfig.getLong("next-backup-at-millis", 0L);
             long lastBackupAt = stateConfig.getLong("last-scheduled-backup-at-millis", 0L);
             lines.add("&eNext scheduled backup: &f" + (nextBackupAt > 0L ? formatConsoleTime(nextBackupAt) : "not scheduled yet"));
             lines.add("&eLast scheduled backup: &f" + (lastBackupAt > 0L ? formatConsoleTime(lastBackupAt) : "none yet"));
         }
-        lines.add("&eRetention: &fmax-backups=" + getConfig().getInt("max-backups", 10)
-                + ", minimum-backups-to-keep=" + Math.max(1, getConfig().getInt("minimum-backups-to-keep", 1))
-                + ", max-total-size-mb=" + getConfig().getLong("max-total-size-mb", 10240));
+        String retentionPrefix = googleDriveEnabled ? "google-drive." : "";
+        lines.add("&eRetention: &fmax-backups=" + getConfig().getInt(retentionPrefix + "max-backups", 10)
+                + ", minimum-backups-to-keep=" + Math.max(1, getConfig().getInt(retentionPrefix + "minimum-backups-to-keep", 1))
+                + ", max-total-size-mb=" + getConfig().getLong(retentionPrefix + "max-total-size-mb", 10240));
         return lines;
     }
 
