@@ -10,6 +10,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -19,10 +21,15 @@ import java.util.Locale;
 
 public final class PaperBackup extends JavaPlugin {
 
+    private static final String CONFIG_FILE_NAME = "google-drive-config.yml";
+    private static final String LEGACY_CONFIG_FILE_NAME = "config.yml";
+
     private BackupManager backupManager;
     private BukkitTask scheduledTask;
     private File stateFile;
     private FileConfiguration stateConfig;
+    private File customConfigFile;
+    private FileConfiguration customConfig;
 
     @Override
     public void onEnable() {
@@ -132,6 +139,69 @@ public final class PaperBackup extends JavaPlugin {
         }
     }
 
+    @Override
+    public FileConfiguration getConfig() {
+        if (customConfig == null) {
+            reloadConfig();
+        }
+        return customConfig;
+    }
+
+    @Override
+    public void reloadConfig() {
+        if (customConfigFile == null) {
+            customConfigFile = new File(getDataFolder(), CONFIG_FILE_NAME);
+        }
+        customConfig = YamlConfiguration.loadConfiguration(customConfigFile);
+
+        try (InputStream stream = getResource(CONFIG_FILE_NAME)) {
+            if (stream != null) {
+                FileConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8));
+                customConfig.setDefaults(defaults);
+            }
+        } catch (IOException exception) {
+            getLogger().warning("Could not load bundled " + CONFIG_FILE_NAME + " defaults: " + exception.getMessage());
+        }
+    }
+
+    @Override
+    public void saveConfig() {
+        if (customConfig == null || customConfigFile == null) {
+            return;
+        }
+
+        try {
+            customConfig.save(customConfigFile);
+        } catch (IOException exception) {
+            getLogger().warning("Could not save " + CONFIG_FILE_NAME + ": " + exception.getMessage());
+        }
+    }
+
+    @Override
+    public void saveDefaultConfig() {
+        if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
+            getLogger().warning("Could not create plugin data folder for " + CONFIG_FILE_NAME + ".");
+        }
+
+        customConfigFile = new File(getDataFolder(), CONFIG_FILE_NAME);
+        if (!customConfigFile.exists()) {
+            File legacyConfigFile = new File(getDataFolder(), LEGACY_CONFIG_FILE_NAME);
+            if (legacyConfigFile.exists()) {
+                try {
+                    Files.copy(legacyConfigFile.toPath(), customConfigFile.toPath(), StandardCopyOption.COPY_ATTRIBUTES);
+                    getLogger().info("Migrated " + LEGACY_CONFIG_FILE_NAME + " to " + CONFIG_FILE_NAME + ".");
+                } catch (IOException exception) {
+                    getLogger().warning("Could not migrate " + LEGACY_CONFIG_FILE_NAME + " to "
+                            + CONFIG_FILE_NAME + ": " + exception.getMessage());
+                }
+            } else {
+                saveResource(CONFIG_FILE_NAME, false);
+            }
+        }
+
+        reloadConfig();
+    }
+
     public BackupManager getBackupManager() {
         return backupManager;
     }
@@ -163,9 +233,9 @@ public final class PaperBackup extends JavaPlugin {
     }
 
     private void migrateConfig() {
-        try (InputStream stream = getResource("config.yml")) {
+        try (InputStream stream = getResource(CONFIG_FILE_NAME)) {
             if (stream == null) {
-                getLogger().warning("Could not find bundled config.yml for migration.");
+                getLogger().warning("Could not find bundled " + CONFIG_FILE_NAME + " for migration.");
                 return;
             }
 
@@ -176,7 +246,7 @@ public final class PaperBackup extends JavaPlugin {
             saveConfig();
             reloadConfig();
         } catch (IOException exception) {
-            getLogger().warning("Could not migrate config.yml: " + exception.getMessage());
+            getLogger().warning("Could not migrate " + CONFIG_FILE_NAME + ": " + exception.getMessage());
         }
     }
 

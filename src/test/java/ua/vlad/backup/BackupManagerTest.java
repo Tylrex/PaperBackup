@@ -74,7 +74,7 @@ class BackupManagerTest {
 
     @Test
     void testIsExcluded_IncludedFiles() throws IOException {
-        File configFile = new File(serverRoot, "plugins/PaperBackup/config.yml");
+        File configFile = new File(serverRoot, "plugins/PaperBackup/google-drive-config.yml");
         File worldRegionFile = new File(serverRoot, "world/region/r.0.0.mca");
         File serverPropertiesFile = new File(serverRoot, "server.properties");
 
@@ -85,7 +85,7 @@ class BackupManagerTest {
         Files.createFile(worldRegionFile.toPath());
         Files.createFile(serverPropertiesFile.toPath());
 
-        assertFalse(backupManager.isExcluded(configFile), "config.yml should NOT be excluded");
+        assertFalse(backupManager.isExcluded(configFile), "google-drive-config.yml should NOT be excluded");
         assertFalse(backupManager.isExcluded(worldRegionFile), "World region files should NOT be excluded");
         assertFalse(backupManager.isExcluded(serverPropertiesFile), "server.properties should NOT be excluded");
     }

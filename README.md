@@ -37,7 +37,7 @@ to Google Drive and no local `backup-*.zip` file is created on the server.
 3. Restart the server.
 4. Put your Google service account JSON at
    `plugins/PaperBackup/google-service-account.json`.
-5. Edit `plugins/PaperBackup/config.yml` and fill `google-drive.folder-id`.
+5. Edit `plugins/PaperBackup/google-drive-config.yml` and fill `google-drive.folder-id`.
 6. Share the Google Drive folder with the service account email from the JSON
    file.
 7. Set `google-drive.enabled: true`.
@@ -53,11 +53,13 @@ permission by default.
 | `/backup` | Show command help. |
 | `/backup run` | Start a manual backup. |
 | `/backup status` | Show the current schedule, retention settings, and running state. |
-| `/backup reload` | Reload `config.yml` and reschedule automatic backups. |
+| `/backup reload` | Reload `google-drive-config.yml` and reschedule automatic backups. |
 
 ## Configuration
 
-The plugin creates `plugins/PaperBackup/config.yml` on first startup.
+The plugin creates `plugins/PaperBackup/google-drive-config.yml` on first startup.
+If an older `plugins/PaperBackup/config.yml` exists, it is copied to
+`google-drive-config.yml` automatically on first startup.
 
 ```yaml
 # Folder where backups are saved. Relative paths are resolved from the server root.
