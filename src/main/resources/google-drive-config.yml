@@ -32,9 +32,12 @@ save-worlds-before-backup: true
 
 # Memory diagnostics/tuning.
 memory:
-  # false by default: JVM garbage collection is automatic.
-  # Enable only if your hosting panel shows RAM staying high after backups.
-  # This asks the JVM to clean unused backup/upload objects after a backup.
+  # true = ask the JVM to clean unused backup/upload objects after a backup.
+  # This helps memory-limited hosting panels settle faster after large backups.
+  cleanup-after-backup: true
+  # A second memory log after cleanup. Set to 0 to disable.
+  delayed-log-seconds: 15
+  # Legacy alias. cleanup-after-backup is preferred.
   request-gc-after-backup: false
 
 # Google Drive storage.

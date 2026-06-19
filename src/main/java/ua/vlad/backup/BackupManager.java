@@ -42,7 +42,8 @@ public class BackupManager {
     private int minimumBackupsToKeep;
     private boolean saveWorldsBeforeBackup;
     private boolean googleDriveEnabled;
-    private boolean requestGcAfterBackup;
+    private boolean cleanupAfterBackup;
+    private int delayedMemoryLogSeconds;
     private GoogleDriveStorage googleDriveStorage;
     private List<String> excludePaths;
 
@@ -83,7 +84,11 @@ public class BackupManager {
         this.maxTotalSizeMb = plugin.getConfig().getLong("max-total-size-mb", 10240);
         this.minimumBackupsToKeep = Math.max(1, plugin.getConfig().getInt("minimum-backups-to-keep", 1));
         this.saveWorldsBeforeBackup = plugin.getConfig().getBoolean("save-worlds-before-backup", true);
-        this.requestGcAfterBackup = plugin.getConfig().getBoolean("memory.request-gc-after-backup", false);
+        this.cleanupAfterBackup = plugin.getConfig().getBoolean(
+                "memory.cleanup-after-backup",
+                plugin.getConfig().getBoolean("memory.request-gc-after-backup", true)
+        );
+        this.delayedMemoryLogSeconds = Math.max(0, plugin.getConfig().getInt("memory.delayed-log-seconds", 15));
         this.googleDriveEnabled = plugin.getConfig().getBoolean("google-drive.enabled", false);
         this.googleDriveStorage = null;
         if (googleDriveEnabled) {
@@ -173,7 +178,7 @@ public class BackupManager {
         } catch (IOException exception) {
             plugin.getLogger().severe("Failed to write backup zip: " + exception.getMessage());
             notifyAdmins("&c[PaperBackup] Backup failed: " + exception.getMessage());
-            requestGcIfConfigured();
+            cleanupMemoryAfterBackup();
             logMemory("after failed backup");
             deletePartialBackup(zipFile);
             return false;
@@ -187,8 +192,9 @@ public class BackupManager {
         notifyAdmins(String.format(Locale.ROOT,
                 "&a[PaperBackup] Backup finished. File: &e%s&a, Size: &e%.2f MB&a, Time: &e%d sec",
                 zipFile.getName(), sizeMb, durationSeconds));
-        requestGcIfConfigured();
+        cleanupMemoryAfterBackup();
         logMemory("after backup");
+        scheduleDelayedMemoryLog("after backup delayed");
 
         pruneOldBackups();
         return true;
@@ -215,25 +221,37 @@ public class BackupManager {
             notifyAdmins(String.format(Locale.ROOT,
                     "&a[PaperBackup] Google Drive backup finished. File: &e%s&a, Time: &e%d sec",
                     uploadResult.fileName(), durationSeconds));
-            requestGcIfConfigured();
+            cleanupMemoryAfterBackup();
             logMemory("after backup");
+            scheduleDelayedMemoryLog("after backup delayed");
             return true;
         } catch (IOException | GeneralSecurityException exception) {
             String message = getGoogleDriveFailureMessage(exception);
             plugin.getLogger().severe("Google Drive backup failed: " + message);
             notifyAdmins("&c[PaperBackup] Google Drive backup failed: " + message);
-            requestGcIfConfigured();
+            cleanupMemoryAfterBackup();
             logMemory("after failed backup");
+            scheduleDelayedMemoryLog("after failed backup delayed");
             return false;
         }
     }
 
-    private void requestGcIfConfigured() {
-        if (!requestGcAfterBackup) {
+    private void cleanupMemoryAfterBackup() {
+        if (!cleanupAfterBackup) {
             return;
         }
-        plugin.getLogger().info("Requesting JVM garbage collection after backup because memory.request-gc-after-backup is enabled.");
+        plugin.getLogger().info("Requesting JVM garbage collection after backup because memory.cleanup-after-backup is enabled.");
         System.gc();
+    }
+
+    private void scheduleDelayedMemoryLog(String stage) {
+        if (delayedMemoryLogSeconds <= 0) {
+            return;
+        }
+        Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> {
+            cleanupMemoryAfterBackup();
+            logMemory(stage);
+        }, delayedMemoryLogSeconds * 20L);
     }
 
     private void logMemory(String stage) {

@@ -94,8 +94,11 @@ catch-up-missed-backup-on-start: true
 save-worlds-before-backup: true
 
 memory:
-  # JVM garbage collection is automatic. Enable only if the hosting panel shows
-  # RAM staying high after backups and you want PaperBackup to request GC.
+  # Ask the JVM to clean unused backup/upload objects after a backup.
+  cleanup-after-backup: true
+  # A second memory log after cleanup. Set to 0 to disable.
+  delayed-log-seconds: 15
+  # Legacy alias. cleanup-after-backup is preferred.
   request-gc-after-backup: false
 
 # Google Drive storage.
@@ -143,8 +146,8 @@ exclude-paths:
 - Older configs with `google-drive.upload-chunk-size-mb` still work, but
   `upload-chunk-size-kb: 256` gives the lowest memory upload mode.
 - Java may keep allocated heap after the backup until garbage collection. Use
-  the memory lines in console to check real JVM heap usage; enable
-  `memory.request-gc-after-backup` only if your host needs that behavior.
+  the memory lines in console to check real JVM heap usage. PaperBackup requests
+  cleanup after backups when `memory.cleanup-after-backup` is enabled.
 - The Google Drive retention cleanup only touches files named `backup-*.zip` in
   the configured Google Drive folder.
 - The configured backup folder is always excluded automatically, even if it is

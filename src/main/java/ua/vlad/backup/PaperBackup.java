@@ -102,6 +102,18 @@ public final class PaperBackup extends JavaPlugin {
     }
 
     private void runScheduledBackup(long scheduledFor, long intervalMillis) {
+        if (backupManager.isRunning()) {
+            long now = System.currentTimeMillis();
+            long nextRunAt = advancePastNow(scheduledFor + intervalMillis, intervalMillis, now);
+            getLogger().info("Scheduled backup was due at " + formatConsoleTime(scheduledFor)
+                    + ", but another backup is already running. Next backup: " + formatConsoleTime(nextRunAt) + ".");
+            setNextBackupAt(nextRunAt);
+            saveState();
+            cancelBackupTask();
+            scheduleBackupTask();
+            return;
+        }
+
         getLogger().info("Starting scheduled server backup. Scheduled time: " + formatConsoleTime(scheduledFor) + ".");
         backupManager.runBackup(false, success -> Bukkit.getScheduler().runTask(this, () -> {
             long now = System.currentTimeMillis();
