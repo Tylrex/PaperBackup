@@ -110,7 +110,8 @@ google-drive:
     client-secret: "PUT_OAUTH_CLIENT_SECRET_HERE"
     refresh-token: "PUT_OAUTH_REFRESH_TOKEN_HERE"
   folder-id: "PUT_GOOGLE_DRIVE_FOLDER_ID_HERE"
-  upload-chunk-size-mb: 1
+  upload-chunk-size-kb: 256
+  pipe-buffer-size-kb: 256
   keep-client-between-backups: false
   max-backups: 10
   minimum-backups-to-keep: 1
@@ -138,7 +139,9 @@ exclude-paths:
   files. The ZIP is produced as a stream and uploaded directly to Google Drive.
 - PaperBackup does not keep the full ZIP in RAM. Files are read in small chunks,
   the ZIP is streamed, and Google Drive upload chunks are controlled by
-  `google-drive.upload-chunk-size-mb`.
+  `google-drive.upload-chunk-size-kb`.
+- Older configs with `google-drive.upload-chunk-size-mb` still work, but
+  `upload-chunk-size-kb: 256` gives the lowest memory upload mode.
 - Java may keep allocated heap after the backup until garbage collection. Use
   the memory lines in console to check real JVM heap usage; enable
   `memory.request-gc-after-backup` only if your host needs that behavior.

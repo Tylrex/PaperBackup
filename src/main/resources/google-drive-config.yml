@@ -60,9 +60,12 @@ google-drive:
 
   # Google Drive folder ID where backups are uploaded.
   folder-id: "PUT_GOOGLE_DRIVE_FOLDER_ID_HERE"
-  # Resumable upload chunk size. Lower values use less memory during upload.
-  # 1 MB is recommended for small/medium Minecraft servers.
-  upload-chunk-size-mb: 1
+  # Resumable upload chunk size in KB. Lower values use less temporary memory.
+  # Google requires chunks to be multiples of 256 KB; 256 is the lowest value.
+  upload-chunk-size-kb: 256
+  # Internal pipe buffer between the ZIP writer and Google uploader.
+  # Keep this small on memory-limited hosting.
+  pipe-buffer-size-kb: 256
   # false = release the cached Google Drive client after every backup.
   # This slightly increases setup work for each backup, but keeps less memory retained.
   keep-client-between-backups: false

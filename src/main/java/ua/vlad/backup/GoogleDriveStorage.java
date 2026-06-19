@@ -28,6 +28,7 @@ import java.util.logging.Logger;
 public class GoogleDriveStorage {
 
     private static final String ZIP_MIME_TYPE = "application/zip";
+    private static final int MIN_UPLOAD_CHUNK_SIZE = 256 * 1024;
 
     private final Logger logger;
     private final String authMode;
@@ -39,7 +40,8 @@ public class GoogleDriveStorage {
     private final int maxBackups;
     private final long maxTotalSizeMb;
     private final int minimumBackupsToKeep;
-    private final int uploadChunkSizeMb;
+    private final int uploadChunkSizeBytes;
+    private final int pipeBufferSizeBytes;
     private final boolean keepClientBetweenBackups;
     private Drive drive;
 
@@ -54,7 +56,8 @@ public class GoogleDriveStorage {
             int maxBackups,
             long maxTotalSizeMb,
             int minimumBackupsToKeep,
-            int uploadChunkSizeMb,
+            int uploadChunkSizeKb,
+            int pipeBufferSizeKb,
             boolean keepClientBetweenBackups
     ) {
         this.logger = logger;
@@ -67,7 +70,8 @@ public class GoogleDriveStorage {
         this.maxBackups = maxBackups;
         this.maxTotalSizeMb = maxTotalSizeMb;
         this.minimumBackupsToKeep = Math.max(1, minimumBackupsToKeep);
-        this.uploadChunkSizeMb = Math.max(1, uploadChunkSizeMb);
+        this.uploadChunkSizeBytes = normalizeUploadChunkSize(uploadChunkSizeKb);
+        this.pipeBufferSizeBytes = Math.max(MIN_UPLOAD_CHUNK_SIZE, pipeBufferSizeKb * 1024);
         this.keepClientBetweenBackups = keepClientBetweenBackups;
     }
 
@@ -83,7 +87,7 @@ public class GoogleDriveStorage {
 
             AtomicReference<Exception> writerException = new AtomicReference<>();
             com.google.api.services.drive.model.File uploaded;
-            try (PipedInputStream input = new PipedInputStream(1024 * 1024);
+            try (PipedInputStream input = new PipedInputStream(pipeBufferSizeBytes);
                  PipedOutputStream output = new PipedOutputStream(input)) {
 
                 Thread writerThread = new Thread(() -> {
@@ -103,7 +107,7 @@ public class GoogleDriveStorage {
                         .setFields("id,name,size,webViewLink");
                 MediaHttpUploader uploader = createRequest.getMediaHttpUploader();
                 uploader.setDirectUploadEnabled(false);
-                uploader.setChunkSize(uploadChunkSizeMb * 1024 * 1024);
+                uploader.setChunkSize(uploadChunkSizeBytes);
                 uploaded = createRequest.execute();
 
                 try {
@@ -147,6 +151,15 @@ public class GoogleDriveStorage {
                 .setApplicationName("PaperBackup")
                 .build();
         return drive;
+    }
+
+    private int normalizeUploadChunkSize(int configuredKb) {
+        int bytes = Math.max(256, configuredKb) * 1024;
+        int remainder = bytes % MIN_UPLOAD_CHUNK_SIZE;
+        if (remainder != 0) {
+            bytes += MIN_UPLOAD_CHUNK_SIZE - remainder;
+        }
+        return bytes;
     }
 
     private GoogleCredentials createCredentials() throws IOException {

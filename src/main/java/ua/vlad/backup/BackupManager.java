@@ -8,6 +8,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.management.BufferPoolMXBean;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryUsage;
 import java.security.GeneralSecurityException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -95,7 +98,8 @@ public class BackupManager {
                     plugin.getConfig().getInt("google-drive.max-backups", maxBackups),
                     plugin.getConfig().getLong("google-drive.max-total-size-mb", maxTotalSizeMb),
                     Math.max(1, plugin.getConfig().getInt("google-drive.minimum-backups-to-keep", minimumBackupsToKeep)),
-                    Math.max(1, plugin.getConfig().getInt("google-drive.upload-chunk-size-mb", 1)),
+                    getUploadChunkSizeKb(),
+                    Math.max(256, plugin.getConfig().getInt("google-drive.pipe-buffer-size-kb", 256)),
                     plugin.getConfig().getBoolean("google-drive.keep-client-between-backups", false)
             );
         }
@@ -237,9 +241,31 @@ public class BackupManager {
         long usedMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024L * 1024L);
         long committedMb = runtime.totalMemory() / (1024L * 1024L);
         long maxMb = runtime.maxMemory() / (1024L * 1024L);
+        MemoryUsage nonHeap = ManagementFactory.getMemoryMXBean().getNonHeapMemoryUsage();
+        long nonHeapUsedMb = nonHeap.getUsed() / (1024L * 1024L);
+        long nonHeapCommittedMb = nonHeap.getCommitted() / (1024L * 1024L);
+        long directMb = getBufferPoolUsedMb("direct");
+        long mappedMb = getBufferPoolUsedMb("mapped");
         plugin.getLogger().info(String.format(Locale.ROOT,
-                "Memory %s: used=%d MB, committed=%d MB, max=%d MB",
-                stage, usedMb, committedMb, maxMb));
+                "Memory %s: heap-used=%d MB, heap-committed=%d MB, heap-max=%d MB, nonheap-used=%d MB, nonheap-committed=%d MB, direct=%d MB, mapped=%d MB",
+                stage, usedMb, committedMb, maxMb, nonHeapUsedMb, nonHeapCommittedMb, directMb, mappedMb));
+    }
+
+    private long getBufferPoolUsedMb(String poolName) {
+        for (BufferPoolMXBean pool : ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class)) {
+            if (pool.getName().equalsIgnoreCase(poolName)) {
+                return pool.getMemoryUsed() / (1024L * 1024L);
+            }
+        }
+        return 0L;
+    }
+
+    private int getUploadChunkSizeKb() {
+        if (plugin.getConfig().isSet("google-drive.upload-chunk-size-kb")) {
+            return Math.max(256, plugin.getConfig().getInt("google-drive.upload-chunk-size-kb", 256));
+        }
+        int legacyMb = plugin.getConfig().getInt("google-drive.upload-chunk-size-mb", 1);
+        return Math.max(256, legacyMb * 1024);
     }
 
     private String getGoogleDriveFailureMessage(Exception exception) {
