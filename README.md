@@ -17,6 +17,8 @@ to Google Drive and no local `backup-*.zip` file is created on the server.
 - Supports Google Drive uploads through OAuth for normal personal Drive accounts.
 - Supports service accounts for Google Workspace Shared Drives.
 - Streams backup ZIPs directly to Google Drive without creating local ZIP files.
+- Limits Google Drive upload chunk size to reduce temporary memory use.
+- Logs JVM memory before and after backups for easier hosting diagnostics.
 - Supports scheduled automatic backups.
 - Persists the next scheduled backup time in `plugins/PaperBackup/state.yml`, so
   server restarts do not reset the interval.
@@ -91,6 +93,11 @@ catch-up-missed-backup-on-start: true
 # Save all loaded worlds before the async ZIP task starts.
 save-worlds-before-backup: true
 
+memory:
+  # JVM garbage collection is automatic. Enable only if the hosting panel shows
+  # RAM staying high after backups and you want PaperBackup to request GC.
+  request-gc-after-backup: false
+
 # Google Drive storage.
 # When enabled, PaperBackup streams the ZIP directly to Google Drive.
 # No local backup-*.zip file is created on the server.
@@ -103,6 +110,8 @@ google-drive:
     client-secret: "PUT_OAUTH_CLIENT_SECRET_HERE"
     refresh-token: "PUT_OAUTH_REFRESH_TOKEN_HERE"
   folder-id: "PUT_GOOGLE_DRIVE_FOLDER_ID_HERE"
+  upload-chunk-size-mb: 1
+  keep-client-between-backups: false
   max-backups: 10
   minimum-backups-to-keep: 1
   max-total-size-mb: 10240
@@ -127,6 +136,12 @@ exclude-paths:
 
 - With `google-drive.enabled: true`, PaperBackup does not create local ZIP
   files. The ZIP is produced as a stream and uploaded directly to Google Drive.
+- PaperBackup does not keep the full ZIP in RAM. Files are read in small chunks,
+  the ZIP is streamed, and Google Drive upload chunks are controlled by
+  `google-drive.upload-chunk-size-mb`.
+- Java may keep allocated heap after the backup until garbage collection. Use
+  the memory lines in console to check real JVM heap usage; enable
+  `memory.request-gc-after-backup` only if your host needs that behavior.
 - The Google Drive retention cleanup only touches files named `backup-*.zip` in
   the configured Google Drive folder.
 - The configured backup folder is always excluded automatically, even if it is

@@ -30,6 +30,13 @@ catch-up-missed-backup-on-start: true
 # This makes world files on disk more consistent for backups.
 save-worlds-before-backup: true
 
+# Memory diagnostics/tuning.
+memory:
+  # false by default: JVM garbage collection is automatic.
+  # Enable only if your hosting panel shows RAM staying high after backups.
+  # This asks the JVM to clean unused backup/upload objects after a backup.
+  request-gc-after-backup: false
+
 # Google Drive storage.
 # When enabled, PaperBackup streams the ZIP directly to Google Drive.
 # No local backup-*.zip file is created on the server.
@@ -53,6 +60,12 @@ google-drive:
 
   # Google Drive folder ID where backups are uploaded.
   folder-id: "PUT_GOOGLE_DRIVE_FOLDER_ID_HERE"
+  # Resumable upload chunk size. Lower values use less memory during upload.
+  # 1 MB is recommended for small/medium Minecraft servers.
+  upload-chunk-size-mb: 1
+  # false = release the cached Google Drive client after every backup.
+  # This slightly increases setup work for each backup, but keeps less memory retained.
+  keep-client-between-backups: false
   # Retention for files in the Google Drive folder.
   # Only backup-*.zip files in this folder are touched.
   max-backups: 10

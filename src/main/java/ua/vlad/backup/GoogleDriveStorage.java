@@ -1,6 +1,7 @@
 package ua.vlad.backup;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.googleapis.media.MediaHttpUploader;
 import com.google.api.client.http.InputStreamContent;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.drive.Drive;
@@ -38,6 +39,8 @@ public class GoogleDriveStorage {
     private final int maxBackups;
     private final long maxTotalSizeMb;
     private final int minimumBackupsToKeep;
+    private final int uploadChunkSizeMb;
+    private final boolean keepClientBetweenBackups;
     private Drive drive;
 
     public GoogleDriveStorage(
@@ -50,7 +53,9 @@ public class GoogleDriveStorage {
             String folderId,
             int maxBackups,
             long maxTotalSizeMb,
-            int minimumBackupsToKeep
+            int minimumBackupsToKeep,
+            int uploadChunkSizeMb,
+            boolean keepClientBetweenBackups
     ) {
         this.logger = logger;
         this.authMode = authMode == null ? "OAUTH" : authMode.trim().toUpperCase(Locale.ROOT);
@@ -62,59 +67,70 @@ public class GoogleDriveStorage {
         this.maxBackups = maxBackups;
         this.maxTotalSizeMb = maxTotalSizeMb;
         this.minimumBackupsToKeep = Math.max(1, minimumBackupsToKeep);
+        this.uploadChunkSizeMb = Math.max(1, uploadChunkSizeMb);
+        this.keepClientBetweenBackups = keepClientBetweenBackups;
     }
 
     public UploadResult upload(String fileName, ZipStreamWriter zipStreamWriter) throws IOException, GeneralSecurityException {
-        Drive driveClient = getDrive();
+        try {
+            Drive driveClient = getDrive();
 
-        com.google.api.services.drive.model.File metadata = new com.google.api.services.drive.model.File();
-        metadata.setName(fileName);
-        if (!folderId.isEmpty()) {
-            metadata.setParents(List.of(folderId));
-        }
+            com.google.api.services.drive.model.File metadata = new com.google.api.services.drive.model.File();
+            metadata.setName(fileName);
+            if (!folderId.isEmpty()) {
+                metadata.setParents(List.of(folderId));
+            }
 
-        AtomicReference<Exception> writerException = new AtomicReference<>();
-        com.google.api.services.drive.model.File uploaded;
-        try (PipedInputStream input = new PipedInputStream(1024 * 1024);
-             PipedOutputStream output = new PipedOutputStream(input)) {
+            AtomicReference<Exception> writerException = new AtomicReference<>();
+            com.google.api.services.drive.model.File uploaded;
+            try (PipedInputStream input = new PipedInputStream(1024 * 1024);
+                 PipedOutputStream output = new PipedOutputStream(input)) {
 
-            Thread writerThread = new Thread(() -> {
-                try (OutputStream closeableOutput = output) {
-                    zipStreamWriter.write(closeableOutput);
-                } catch (Exception exception) {
-                    writerException.set(exception);
+                Thread writerThread = new Thread(() -> {
+                    try (OutputStream closeableOutput = output) {
+                        zipStreamWriter.write(closeableOutput);
+                    } catch (Exception exception) {
+                        writerException.set(exception);
+                    }
+                }, "PaperBackup-GoogleDrive-ZipWriter");
+                writerThread.setDaemon(true);
+                writerThread.start();
+
+                InputStreamContent mediaContent = new InputStreamContent(ZIP_MIME_TYPE, input);
+                mediaContent.setLength(-1L);
+                Drive.Files.Create createRequest = driveClient.files()
+                        .create(metadata, mediaContent)
+                        .setFields("id,name,size,webViewLink");
+                MediaHttpUploader uploader = createRequest.getMediaHttpUploader();
+                uploader.setDirectUploadEnabled(false);
+                uploader.setChunkSize(uploadChunkSizeMb * 1024 * 1024);
+                uploaded = createRequest.execute();
+
+                try {
+                    writerThread.join();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while waiting for ZIP stream writer.", exception);
                 }
-            }, "PaperBackup-GoogleDrive-ZipWriter");
-            writerThread.setDaemon(true);
-            writerThread.start();
+            }
 
-            InputStreamContent mediaContent = new InputStreamContent(ZIP_MIME_TYPE, input);
-            mediaContent.setLength(-1L);
-            uploaded = driveClient.files()
-                    .create(metadata, mediaContent)
-                    .setFields("id,name,size,webViewLink")
-                    .execute();
+            Exception exception = writerException.get();
+            if (exception != null) {
+                deletePartialUpload(driveClient, uploaded);
+                if (exception instanceof IOException) {
+                    throw (IOException) exception;
+                }
+                throw new IOException("Failed to create ZIP stream.", exception);
+            }
 
-            try {
-                writerThread.join();
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Interrupted while waiting for ZIP stream writer.", exception);
+            pruneOldBackups(driveClient);
+
+            return new UploadResult(uploaded.getId(), uploaded.getName(), uploaded.getWebViewLink());
+        } finally {
+            if (!keepClientBetweenBackups) {
+                drive = null;
             }
         }
-
-        Exception exception = writerException.get();
-        if (exception != null) {
-            deletePartialUpload(driveClient, uploaded);
-            if (exception instanceof IOException) {
-                throw (IOException) exception;
-            }
-            throw new IOException("Failed to create ZIP stream.", exception);
-        }
-
-        pruneOldBackups(driveClient);
-
-        return new UploadResult(uploaded.getId(), uploaded.getName(), uploaded.getWebViewLink());
     }
 
     private Drive getDrive() throws IOException, GeneralSecurityException {

@@ -39,6 +39,7 @@ public class BackupManager {
     private int minimumBackupsToKeep;
     private boolean saveWorldsBeforeBackup;
     private boolean googleDriveEnabled;
+    private boolean requestGcAfterBackup;
     private GoogleDriveStorage googleDriveStorage;
     private List<String> excludePaths;
 
@@ -79,6 +80,7 @@ public class BackupManager {
         this.maxTotalSizeMb = plugin.getConfig().getLong("max-total-size-mb", 10240);
         this.minimumBackupsToKeep = Math.max(1, plugin.getConfig().getInt("minimum-backups-to-keep", 1));
         this.saveWorldsBeforeBackup = plugin.getConfig().getBoolean("save-worlds-before-backup", true);
+        this.requestGcAfterBackup = plugin.getConfig().getBoolean("memory.request-gc-after-backup", false);
         this.googleDriveEnabled = plugin.getConfig().getBoolean("google-drive.enabled", false);
         this.googleDriveStorage = null;
         if (googleDriveEnabled) {
@@ -92,7 +94,9 @@ public class BackupManager {
                     plugin.getConfig().getString("google-drive.folder-id", ""),
                     plugin.getConfig().getInt("google-drive.max-backups", maxBackups),
                     plugin.getConfig().getLong("google-drive.max-total-size-mb", maxTotalSizeMb),
-                    Math.max(1, plugin.getConfig().getInt("google-drive.minimum-backups-to-keep", minimumBackupsToKeep))
+                    Math.max(1, plugin.getConfig().getInt("google-drive.minimum-backups-to-keep", minimumBackupsToKeep)),
+                    Math.max(1, plugin.getConfig().getInt("google-drive.upload-chunk-size-mb", 1)),
+                    plugin.getConfig().getBoolean("google-drive.keep-client-between-backups", false)
             );
         }
         this.excludePaths = normalizeExcludes(plugin.getConfig().getStringList("exclude-paths"));
@@ -143,6 +147,7 @@ public class BackupManager {
     private boolean createBackup() {
         long startTime = System.currentTimeMillis();
         notifyAdmins("&a[PaperBackup] Starting server backup...");
+        logMemory("before backup");
         String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(new Date());
         String backupFileName = "backup-" + timestamp + ".zip";
 
@@ -164,6 +169,8 @@ public class BackupManager {
         } catch (IOException exception) {
             plugin.getLogger().severe("Failed to write backup zip: " + exception.getMessage());
             notifyAdmins("&c[PaperBackup] Backup failed: " + exception.getMessage());
+            requestGcIfConfigured();
+            logMemory("after failed backup");
             deletePartialBackup(zipFile);
             return false;
         }
@@ -176,6 +183,8 @@ public class BackupManager {
         notifyAdmins(String.format(Locale.ROOT,
                 "&a[PaperBackup] Backup finished. File: &e%s&a, Size: &e%.2f MB&a, Time: &e%d sec",
                 zipFile.getName(), sizeMb, durationSeconds));
+        requestGcIfConfigured();
+        logMemory("after backup");
 
         pruneOldBackups();
         return true;
@@ -202,13 +211,35 @@ public class BackupManager {
             notifyAdmins(String.format(Locale.ROOT,
                     "&a[PaperBackup] Google Drive backup finished. File: &e%s&a, Time: &e%d sec",
                     uploadResult.fileName(), durationSeconds));
+            requestGcIfConfigured();
+            logMemory("after backup");
             return true;
         } catch (IOException | GeneralSecurityException exception) {
             String message = getGoogleDriveFailureMessage(exception);
             plugin.getLogger().severe("Google Drive backup failed: " + message);
             notifyAdmins("&c[PaperBackup] Google Drive backup failed: " + message);
+            requestGcIfConfigured();
+            logMemory("after failed backup");
             return false;
         }
+    }
+
+    private void requestGcIfConfigured() {
+        if (!requestGcAfterBackup) {
+            return;
+        }
+        plugin.getLogger().info("Requesting JVM garbage collection after backup because memory.request-gc-after-backup is enabled.");
+        System.gc();
+    }
+
+    private void logMemory(String stage) {
+        Runtime runtime = Runtime.getRuntime();
+        long usedMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024L * 1024L);
+        long committedMb = runtime.totalMemory() / (1024L * 1024L);
+        long maxMb = runtime.maxMemory() / (1024L * 1024L);
+        plugin.getLogger().info(String.format(Locale.ROOT,
+                "Memory %s: used=%d MB, committed=%d MB, max=%d MB",
+                stage, usedMb, committedMb, maxMb));
     }
 
     private String getGoogleDriveFailureMessage(Exception exception) {
