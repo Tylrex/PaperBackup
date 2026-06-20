@@ -59,7 +59,6 @@ public class LocalRetentionService {
                 notifier.notifyAdmins("&6[PaperBackup] Deleted oldest backup due to size limit: &e" + oldest.getName());
             } else {
                 logger.warning("Failed to delete backup file: " + oldest.getName());
-                return;
             }
         }
     }
@@ -78,7 +77,6 @@ public class LocalRetentionService {
                 notifier.notifyAdmins("&6[PaperBackup] Deleted oldest backup due to count limit: &e" + oldest.getName());
             } else {
                 logger.warning("Failed to delete backup file: " + oldest.getName());
-                return;
             }
         }
     }

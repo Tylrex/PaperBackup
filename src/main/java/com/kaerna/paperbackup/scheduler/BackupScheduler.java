@@ -19,6 +19,7 @@ public class BackupScheduler {
     }
 
     public void start(BackupConfig config, BackupService backupService) {
+        stop();
         if (config.backupIntervalMinutes <= 0) {
             plugin.getLogger().info("Automatic backups are disabled (interval is <= 0).");
             return;

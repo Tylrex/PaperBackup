@@ -31,9 +31,9 @@ public class GoogleDriveRetentionService {
             return;
         }
 
-        backups.sort(Comparator.comparing(file -> {
+        backups.sort(Comparator.comparingLong(file -> {
             if (file.getCreatedTime() == null) {
-                return 0L;
+                return Long.MAX_VALUE;
             }
             return file.getCreatedTime().getValue();
         }));
