@@ -1,8 +1,29 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# Maven old build dir
 target/
+
+# IDE
 .idea/
 *.iml
-.DS_Store
+.vscode/
 .classpath
 .project
 .settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
+
+# Runtime / secrets
+plugins/
+backups/
+artifacts/
+*.zip
+google-service-account.json

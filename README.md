@@ -214,16 +214,46 @@ domain delegation. If you see `Service Accounts do not have storage quota`, use
 
 ## Building
 
-This project uses Maven:
+This project uses Gradle:
 
 ```bash
-mvn clean package
+./gradlew clean build
 ```
 
-The compiled jar is created in `target/`.
+The compiled plugin jar is created in `build/libs/PaperBackup-GoogleDrive-1.0.jar`.
 
-Tests can be run with:
+Tests only:
 
 ```bash
-mvn test
+./gradlew test
+```
+
+## Development
+
+| | |
+|---|---|
+| Java | 21 |
+| Minecraft | Paper / Purpur 1.21.1 |
+| Build system | Gradle 8.10.2 + Shadow |
+| Main package | `com.kaerna.paperbackup` |
+
+## Architecture
+
+```
+PaperBackup          — Plugin bootstrap: wires services, registers command, starts scheduler.
+BackupService        — Runs backups, owns the AtomicBoolean guard, calls storage.
+ZipBackupWriter      — Walks the server directory tree and writes the ZIP stream.
+ExclusionMatcher     — Decides which files and folders to skip during the walk.
+BackupStorage        — Interface implemented by local and Google Drive storage.
+LocalBackupStorage   — Writes backup-*.zip to the local backup folder.
+GoogleDriveStorage   — Streams the ZIP directly to Google Drive via resumable upload.
+GoogleDriveClientFactory — Builds the authenticated Drive client (OAuth or service account).
+BackupScheduler      — Calculates next-run time, schedules the Bukkit task, handles catch-up.
+ConfigService        — Loads google-drive-config.yml, applies defaults, handles migration.
+StateService         — Reads and writes state.yml (next-backup-at-millis, last-scheduled-backup-at-millis).
+RetentionPolicy      — Data class: max-backups, max-total-size-mb, minimum-backups-to-keep.
+LocalRetentionService      — Prunes old backup-*.zip files from the local backup folder.
+GoogleDriveRetentionService — Prunes old backup-*.zip files from the Google Drive folder.
+BackupNotifier       — Sends coloured status messages to the console and online admins.
+MemoryReporter       — Logs JVM heap and buffer pool usage before and after each backup.
 ```

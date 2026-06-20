@@ -1,8 +1,8 @@
 name: PaperBackup
 version: 1.0
-main: ua.vlad.backup.PaperBackup
+main: com.kaerna.paperbackup.PaperBackup
 api-version: '1.21'
-author: Vlad
+author: Kaerna
 description: A plugin to stream zip backups of your Paper server to Google Drive.
 commands:
   backup:
