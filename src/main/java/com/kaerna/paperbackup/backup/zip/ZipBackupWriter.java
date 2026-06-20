@@ -19,21 +19,31 @@ public class ZipBackupWriter {
 
     private final ExclusionMatcher exclusionMatcher;
     private final File serverRoot;
+    private final String serverRootCanonical;
     private final Logger logger;
 
     public ZipBackupWriter(ExclusionMatcher exclusionMatcher, File serverRoot, Logger logger) {
         this.exclusionMatcher = exclusionMatcher;
         this.serverRoot = serverRoot;
         this.logger = logger;
+        String canonical;
+        try {
+            canonical = serverRoot.getCanonicalPath();
+        } catch (IOException e) {
+            canonical = serverRoot.getAbsolutePath();
+        }
+        this.serverRootCanonical = canonical;
     }
 
     public void write(OutputStream outputStream) throws IOException {
+        // Single buffer reused for every file in this backup run — avoids one 8 KB allocation per file.
+        byte[] buffer = new byte[COPY_BUFFER_SIZE];
         try (ZipOutputStream zipOutput = new ZipOutputStream(outputStream)) {
-            writeZip(serverRoot.toPath(), zipOutput);
+            writeZip(serverRoot.toPath(), zipOutput, buffer);
         }
     }
 
-    private void writeZip(Path root, ZipOutputStream zipOutput) throws IOException {
+    private void writeZip(Path root, ZipOutputStream zipOutput, byte[] buffer) throws IOException {
         Files.walkFileTree(root, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
@@ -53,7 +63,7 @@ public class ZipBackupWriter {
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
                 File source = file.toFile();
                 if (!exclusionMatcher.isExcluded(source)) {
-                    addFile(source, zipOutput);
+                    addFile(source, zipOutput, buffer);
                 }
                 return FileVisitResult.CONTINUE;
             }
@@ -66,7 +76,7 @@ public class ZipBackupWriter {
         });
     }
 
-    private void addFile(File source, ZipOutputStream zipOutput) {
+    private void addFile(File source, ZipOutputStream zipOutput, byte[] buffer) {
         String relativePath = getRelativePath(source);
         if (relativePath.isEmpty()) {
             return;
@@ -77,7 +87,6 @@ public class ZipBackupWriter {
             zipOutput.putNextEntry(new ZipEntry(relativePath));
             entryOpen = true;
 
-            byte[] buffer = new byte[COPY_BUFFER_SIZE];
             int length;
             while ((length = input.read(buffer)) >= 0) {
                 zipOutput.write(buffer, 0, length);
@@ -98,7 +107,6 @@ public class ZipBackupWriter {
     private String getRelativePath(File file) {
         try {
             String fileCanonical = file.getCanonicalPath();
-            String serverRootCanonical = serverRoot.getCanonicalPath();
             if (fileCanonical.equals(serverRootCanonical)) {
                 return "";
             }

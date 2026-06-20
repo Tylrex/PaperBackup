@@ -49,8 +49,11 @@ public class BackupCommand implements CommandExecutor, TabCompleter {
                 }
             }
             case "reload" -> {
-                plugin.reloadPlugin();
-                sender.sendMessage(color("&aPaperBackup configuration has been reloaded!"));
+                if (plugin.reloadPlugin()) {
+                    sender.sendMessage(color("&aPaperBackup configuration has been reloaded!"));
+                } else {
+                    sender.sendMessage(color("&cCannot reload while a backup is in progress. Try again after it completes."));
+                }
             }
             default -> sender.sendMessage(color("&cUnknown subcommand. Use /backup for help."));
         }

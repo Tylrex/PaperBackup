@@ -60,7 +60,11 @@ public final class PaperBackup extends JavaPlugin {
         getLogger().info("PaperBackup has been disabled!");
     }
 
-    public void reloadPlugin() {
+    public boolean reloadPlugin() {
+        if (backupService.isRunning()) {
+            getLogger().warning("Cannot reload while a backup is in progress. Try again after the backup completes.");
+            return false;
+        }
         scheduler.stop();
         configService.reload();
         stateService.load();
@@ -76,6 +80,7 @@ public final class PaperBackup extends JavaPlugin {
 
         backupService.reload(config, storage, zipWriter, notifier, memoryReporter);
         scheduler.start(config, backupService);
+        return true;
     }
 
     public BackupService getBackupService() {

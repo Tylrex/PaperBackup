@@ -21,6 +21,7 @@ public class GoogleDriveStorage implements BackupStorage {
 
     private static final String ZIP_MIME_TYPE = "application/zip";
     private static final int MIN_CHUNK_SIZE = 256 * 1024;
+    private static final long WRITER_JOIN_TIMEOUT_MS = 30_000L;
 
     private final Logger logger;
     private final GoogleDriveClientFactory clientFactory;
@@ -63,10 +64,13 @@ public class GoogleDriveStorage implements BackupStorage {
             AtomicReference<Exception> writerException = new AtomicReference<>();
             com.google.api.services.drive.model.File uploaded;
 
+            // Declared outside so it remains reachable in the fail-safe join after the TWR block.
+            Thread writerThread = null;
+
             try (PipedInputStream input = new PipedInputStream(pipeBufferSizeBytes);
                  PipedOutputStream output = new PipedOutputStream(input)) {
 
-                Thread writerThread = new Thread(() -> {
+                writerThread = new Thread(() -> {
                     try (OutputStream closeableOutput = output) {
                         writer.write(closeableOutput);
                     } catch (Exception exception) {
@@ -86,11 +90,25 @@ public class GoogleDriveStorage implements BackupStorage {
                 uploader.setChunkSize(uploadChunkSizeBytes);
                 uploaded = createRequest.execute();
 
+                // Happy path: all data uploaded. Join here while pipe is still technically open
+                // (writerThread already closed output after writing, so join returns instantly).
                 try {
                     writerThread.join();
                 } catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();
                     throw new IOException("Interrupted while waiting for ZIP stream writer.", exception);
+                }
+                writerThread = null; // mark as joined — skip fail-safe below
+            }
+
+            // Fail-safe: execute() threw before we could join. The TWR has now closed both pipe
+            // ends, so the writer thread will observe a broken pipe and terminate on its own.
+            // We wait for it to confirm there are no lingering threads.
+            if (writerThread != null) {
+                try {
+                    writerThread.join(WRITER_JOIN_TIMEOUT_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
             }
 
