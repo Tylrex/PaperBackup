@@ -1,6 +1,6 @@
 package com.kaerna.paperbackup.retention;
 
-import com.kaerna.paperbackup.backup.BackupNotifier;
+import com.kaerna.paperbackup.backup.Notifier;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -14,9 +14,9 @@ public class LocalRetentionService {
     private final File backupDir;
     private final RetentionPolicy policy;
     private final Logger logger;
-    private final BackupNotifier notifier;
+    private final Notifier notifier;
 
-    public LocalRetentionService(File backupDir, RetentionPolicy policy, Logger logger, BackupNotifier notifier) {
+    public LocalRetentionService(File backupDir, RetentionPolicy policy, Logger logger, Notifier notifier) {
         this.backupDir = backupDir;
         this.policy = policy;
         this.logger = logger;

@@ -4,7 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.plugin.Plugin;
 
-public class BackupNotifier {
+public class BackupNotifier implements Notifier {
 
     private final Plugin plugin;
 
