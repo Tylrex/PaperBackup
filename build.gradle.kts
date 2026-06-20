@@ -24,6 +24,7 @@ dependencies {
     implementation("com.google.auth:google-auth-library-oauth2-http:1.23.0")
     implementation("com.google.http-client:google-http-client-gson:1.44.2")
 
+    testImplementation("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
     testImplementation("org.mockito:mockito-core:5.12.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.12.0")
