@@ -24,5 +24,6 @@ Thumbs.db
 # Runtime / secrets
 plugins/
 backups/
+artifacts/
 *.zip
 google-service-account.json
