@@ -20,9 +20,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+          cache: gradle
 
       - name: Build
         run: ./gradlew clean build
