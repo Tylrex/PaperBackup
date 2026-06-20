@@ -1,5 +1,6 @@
-package ua.vlad.backup;
+package com.kaerna.paperbackup.command;
 
+import com.kaerna.paperbackup.PaperBackup;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -33,27 +34,27 @@ public class BackupCommand implements CommandExecutor, TabCompleter {
         }
 
         String subCommand = args[0].toLowerCase();
-        if (subCommand.equals("run")) {
-            if (plugin.getBackupManager().isRunning()) {
-                sender.sendMessage(color("&cBackup is already running!"));
-                return true;
+        switch (subCommand) {
+            case "run" -> {
+                if (plugin.getBackupService().isRunning()) {
+                    sender.sendMessage(color("&cBackup is already running!"));
+                    return true;
+                }
+                sender.sendMessage(color("&aStarting manual backup..."));
+                plugin.getBackupService().runBackup(true);
             }
-            sender.sendMessage(color("&aStarting manual backup..."));
-            plugin.getBackupManager().runBackup(true);
-            return true;
-        } else if (subCommand.equals("status")) {
-            for (String line : plugin.getStatusLines()) {
-                sender.sendMessage(color(line));
+            case "status" -> {
+                for (String line : plugin.getStatusLines()) {
+                    sender.sendMessage(color(line));
+                }
             }
-            return true;
-        } else if (subCommand.equals("reload")) {
-            plugin.reloadPlugin();
-            sender.sendMessage(color("&aPaperBackup configuration has been reloaded!"));
-            return true;
-        } else {
-            sender.sendMessage(color("&cUnknown subcommand. Use /backup for help."));
-            return true;
+            case "reload" -> {
+                plugin.reloadPlugin();
+                sender.sendMessage(color("&aPaperBackup configuration has been reloaded!"));
+            }
+            default -> sender.sendMessage(color("&cUnknown subcommand. Use /backup for help."));
         }
+        return true;
     }
 
     @Override
@@ -62,14 +63,12 @@ public class BackupCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission("backup.admin")) {
             return completions;
         }
-
         if (args.length == 1) {
             String input = args[0].toLowerCase();
             if ("run".startsWith(input)) completions.add("run");
             if ("status".startsWith(input)) completions.add("status");
             if ("reload".startsWith(input)) completions.add("reload");
         }
-
         return completions;
     }
 
